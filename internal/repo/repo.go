@@ -1,0 +1,385 @@
+package repo
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"strings"
+)
+
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+type User struct {
+	ID                 int64
+	Email              string
+	PasswordHash       string
+	Name               string
+	IsPlatformAdmin    bool
+	MustChangePassword bool
+	IsActive           bool
+}
+
+type Company struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	IsActive    bool   `json:"is_active"`
+	ClientCount int64  `json:"client_count"`
+	AdminCount  int64  `json:"admin_count"`
+}
+
+type CompanyAdmin struct {
+	UserID      int64  `json:"user_id"`
+	CompanyID   int64  `json:"company_id"`
+	CompanyName string `json:"company_name"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+	IsActive    bool   `json:"is_active"`
+}
+
+type Repository struct {
+	ex  execer
+	raw *sql.DB // solo en repo raíz; permite BeginTx
+}
+
+func New(db *sql.DB) *Repository {
+	return &Repository{ex: db, raw: db}
+}
+
+// BeginTx inicia transacción; el segundo retorno usa la misma API sobre el Tx.
+func (r *Repository) BeginTx(ctx context.Context) (*sql.Tx, *Repository, error) {
+	if r.raw == nil {
+		return nil, nil, errors.New("no se puede anidar transacción")
+	}
+	tx, err := r.raw.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tx, &Repository{ex: tx, raw: nil}, nil
+}
+
+func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	var u User
+	var isActive int
+	err := r.ex.QueryRowContext(ctx,
+		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE email = ? LIMIT 1`,
+		email,
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &isActive)
+	if err != nil {
+		return nil, err
+	}
+	u.IsActive = isActive != 0
+	return &u, nil
+}
+
+func (r *Repository) GetUserByID(ctx context.Context, userID int64) (*User, error) {
+	var u User
+	var isActive int
+	err := r.ex.QueryRowContext(ctx,
+		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE id = ? LIMIT 1`,
+		userID,
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &isActive)
+	if err != nil {
+		return nil, err
+	}
+	u.IsActive = isActive != 0
+	return &u, nil
+}
+
+func (r *Repository) CreateUser(ctx context.Context, email, passwordHash, name string, isPlatformAdmin, mustChangePassword, isActive bool) (int64, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	ia := 0
+	if isActive {
+		ia = 1
+	}
+	res, err := r.ex.ExecContext(ctx,
+		`INSERT INTO users (email, password_hash, name, is_platform_admin, must_change_password, is_active) VALUES (?, ?, ?, ?, ?, ?)`,
+		email, passwordHash, strings.TrimSpace(name), isPlatformAdmin, mustChangePassword, ia,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (r *Repository) SetUserPasswordAndClearMustChange(ctx context.Context, userID int64, passwordHash string) error {
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`, passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// UpdateOwnProfile actualiza nombre/correo y opcionalmente contraseña para un usuario existente.
+func (r *Repository) UpdateOwnProfile(ctx context.Context, userID int64, email, name string, passwordHash *string) error {
+	if userID <= 0 {
+		return errors.New("user_id inválido")
+	}
+	if email == "" || name == "" {
+		return errors.New("email y name son obligatorios")
+	}
+	if passwordHash != nil {
+		res, err := r.ex.ExecContext(ctx,
+			`UPDATE users SET email = ?, name = ?, password_hash = ?, must_change_password = 0 WHERE id = ?`,
+			strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), *passwordHash, userID,
+		)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	}
+
+	res, err := r.ex.ExecContext(ctx,
+		`UPDATE users SET email = ?, name = ? WHERE id = ?`,
+		strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), userID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) CreateCompany(ctx context.Context, name string) (int64, error) {
+	res, err := r.ex.ExecContext(ctx,
+		`INSERT INTO companies (name) VALUES (?)`,
+		strings.TrimSpace(name),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (r *Repository) AddCompanyUser(ctx context.Context, companyID, userID int64, role string) error {
+	if role == "" {
+		role = "admin"
+	}
+	_, err := r.ex.ExecContext(ctx,
+		`INSERT INTO company_users (company_id, user_id, role) VALUES (?, ?, ?)`,
+		companyID, userID, role,
+	)
+	return err
+}
+
+// FirstCompanyIDForUser devuelve la primera empresa asociada (MVP: una sola).
+func (r *Repository) FirstCompanyIDForUser(ctx context.Context, userID int64) (int64, string, error) {
+	var cid int64
+	var role string
+	err := r.ex.QueryRowContext(ctx,
+		`SELECT cu.company_id, cu.role
+FROM company_users cu
+JOIN companies c ON c.id = cu.company_id
+WHERE cu.user_id = ? AND c.is_active = 1
+ORDER BY cu.company_id ASC LIMIT 1`,
+		userID,
+	).Scan(&cid, &role)
+	if err != nil {
+		return 0, "", err
+	}
+	return cid, role, nil
+}
+
+func (r *Repository) CountPlatformAdmins(ctx context.Context) (int64, error) {
+	var total int64
+	err := r.ex.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE is_platform_admin = 1`).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (r *Repository) ListCompanies(ctx context.Context) ([]Company, error) {
+	rows, err := r.ex.QueryContext(ctx, `
+SELECT c.id, c.name, c.is_active,
+       COALESCE(cc.client_count, 0) AS client_count,
+       COALESCE(ac.admin_count, 0) AS admin_count
+FROM companies c
+LEFT JOIN (
+	SELECT company_id, COUNT(1) AS client_count
+	FROM clients
+	GROUP BY company_id
+) cc ON cc.company_id = c.id
+LEFT JOIN (
+	SELECT cu.company_id, COUNT(1) AS admin_count
+	FROM company_users cu
+	JOIN users u ON u.id = cu.user_id
+	WHERE cu.role = 'admin' AND u.is_platform_admin = 0
+	GROUP BY cu.company_id
+) ac ON ac.company_id = c.id
+ORDER BY c.id ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Company
+	for rows.Next() {
+		var c Company
+		var ia int
+		if err := rows.Scan(&c.ID, &c.Name, &ia, &c.ClientCount, &c.AdminCount); err != nil {
+			return nil, err
+		}
+		c.IsActive = ia != 0
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// PatchCompany actualiza nombre y/o estado. Al menos uno debe ser no nil.
+func (r *Repository) PatchCompany(ctx context.Context, companyID int64, name *string, isActive *bool) error {
+	if name == nil && isActive == nil {
+		return errors.New("nada que actualizar")
+	}
+	var parts []string
+	var args []any
+	if name != nil {
+		parts = append(parts, "name = ?")
+		args = append(args, strings.TrimSpace(*name))
+	}
+	if isActive != nil {
+		v := 0
+		if *isActive {
+			v = 1
+		}
+		parts = append(parts, "is_active = ?")
+		args = append(args, v)
+	}
+	args = append(args, companyID)
+	q := "UPDATE companies SET " + strings.Join(parts, ", ") + " WHERE id = ?"
+	res, err := r.ex.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) ListCompanyAdmins(ctx context.Context) ([]CompanyAdmin, error) {
+	q := `
+SELECT u.id, cu.company_id, c.name, u.email, u.name, cu.role, u.is_active
+FROM company_users cu
+JOIN users u ON u.id = cu.user_id
+JOIN companies c ON c.id = cu.company_id
+WHERE cu.role = 'admin' AND u.is_platform_admin = 0
+ORDER BY cu.company_id ASC, u.id ASC
+`
+	rows, err := r.ex.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CompanyAdmin
+	for rows.Next() {
+		var a CompanyAdmin
+		var ia int
+		if err := rows.Scan(&a.UserID, &a.CompanyID, &a.CompanyName, &a.Email, &a.Name, &a.Role, &ia); err != nil {
+			return nil, err
+		}
+		a.IsActive = ia != 0
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) UpdateCompanyAdmin(ctx context.Context, userID int64, email, name string) error {
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET email = ?, name = ? WHERE id = ? AND is_platform_admin = 0`, strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) UpdateCompanyAdminPassword(ctx context.Context, userID int64, passwordHash string) error {
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND is_platform_admin = 0`, passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// SetCompanyAdminTemporaryPassword asigna hash y obliga cambio en próximo acceso.
+func (r *Repository) SetCompanyAdminTemporaryPassword(ctx context.Context, userID int64, passwordHash string) error {
+	res, err := r.ex.ExecContext(ctx,
+		`UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ? AND is_platform_admin = 0`,
+		passwordHash, userID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// SetCompanyAdminActive activa o desactiva el login del usuario (no aplica a platform_admin).
+func (r *Repository) SetCompanyAdminActive(ctx context.Context, userID int64, active bool) error {
+	v := 0
+	if active {
+		v = 1
+	}
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET is_active = ? WHERE id = ? AND is_platform_admin = 0`, v, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+var ErrEmailTaken = errors.New("email ya registrado")
