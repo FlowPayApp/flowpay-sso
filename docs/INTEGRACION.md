@@ -35,6 +35,6 @@ Ampliar con `roles` o `permissions` cuando tengas RBAC.
 Opciones:
 
 - **BD propia** en `flowpay-sso` (tablas `users`, `sessions`, `company_memberships`).
-- O **misma instancia MySQL** que FlowPay pero **esquema o prefijo distinto** — útil al inicio; separar físicamente cuando escale el equipo u operación.
+- O **misma instancia PostgreSQL** que FlowPay (mismo `FLOWPAY_SSO_DSN` / `FLOWPAY_DSN` y tablas `users`, `companies`, etc. en `public`) — es el modo actual del MVP.
 
 No dupliques tablas de negocio (`charges`, `clients`) en el SSO.

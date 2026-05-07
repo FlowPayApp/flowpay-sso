@@ -152,7 +152,7 @@ func (h *Auth) Register(c *gin.Context) {
 	}
 	userID, err := rw.CreateUser(c.Request.Context(), body.Email, string(hash), body.Name, false, false, true)
 	if err != nil {
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
 			return
 		}
@@ -315,7 +315,7 @@ func (h *Auth) UpdateProfile(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "usuario no encontrado"})
 			return
 		}
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
 			return
 		}
@@ -376,7 +376,7 @@ func (h *Auth) CreateCompanyWithAdmin(c *gin.Context) {
 	}
 	userID, err := rw.CreateUser(c.Request.Context(), body.AdminEmail, string(hash), body.AdminName, false, false, true)
 	if err != nil {
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
 			return
 		}
@@ -461,7 +461,7 @@ func (h *Auth) CreateCompanyUser(c *gin.Context) {
 	defer tx.Rollback()
 	userID, err := rw.CreateUser(c.Request.Context(), body.Email, string(hash), body.Name, false, false, true)
 	if err != nil {
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
 			return
 		}
@@ -513,7 +513,7 @@ func (h *Auth) BootstrapPlatformAdmin(c *gin.Context) {
 	}
 	userID, err := h.Repo.CreateUser(c.Request.Context(), body.Email, string(hash), body.Name, true, false, true)
 	if err != nil {
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
 			return
 		}
@@ -558,7 +558,7 @@ func (h *Auth) CreateCompanyAdmin(c *gin.Context) {
 
 	userID, err := rw.CreateUser(c.Request.Context(), body.Email, string(hash), body.Name, false, true, true)
 	if err != nil {
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
 			return
 		}
@@ -730,7 +730,7 @@ func (h *Auth) UpdateCompanyAdmin(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "admin no encontrado"})
 			return
 		}
-		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
 			return
 		}

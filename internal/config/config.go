@@ -25,7 +25,7 @@ func Load() Config {
 		dsn = os.Getenv("FLOWPAY_DSN")
 	}
 	if dsn == "" {
-		dsn = "flowpay:flowpay@tcp(127.0.0.1:3306)/flowpay?parseTime=true&loc=Local&clientFoundRows=true"
+		dsn = "postgres://flowpay:flowpay@127.0.0.1:5432/flowpay?sslmode=disable"
 	}
 	secret := os.Getenv("FLOWPAY_JWT_SECRET")
 	ttl := 24 * time.Hour

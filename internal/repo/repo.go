@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -65,50 +66,43 @@ func (r *Repository) BeginTx(ctx context.Context) (*sql.Tx, *Repository, error) 
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	var u User
-	var isActive int
 	err := r.ex.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE email = ? LIMIT 1`,
+		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE email = $1 LIMIT 1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &isActive)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &u.IsActive)
 	if err != nil {
 		return nil, err
 	}
-	u.IsActive = isActive != 0
 	return &u, nil
 }
 
 func (r *Repository) GetUserByID(ctx context.Context, userID int64) (*User, error) {
 	var u User
-	var isActive int
 	err := r.ex.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE id = ? LIMIT 1`,
+		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE id = $1 LIMIT 1`,
 		userID,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &isActive)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &u.IsActive)
 	if err != nil {
 		return nil, err
 	}
-	u.IsActive = isActive != 0
 	return &u, nil
 }
 
 func (r *Repository) CreateUser(ctx context.Context, email, passwordHash, name string, isPlatformAdmin, mustChangePassword, isActive bool) (int64, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	ia := 0
-	if isActive {
-		ia = 1
-	}
-	res, err := r.ex.ExecContext(ctx,
-		`INSERT INTO users (email, password_hash, name, is_platform_admin, must_change_password, is_active) VALUES (?, ?, ?, ?, ?, ?)`,
-		email, passwordHash, strings.TrimSpace(name), isPlatformAdmin, mustChangePassword, ia,
-	)
+	var id int64
+	err := r.ex.QueryRowContext(ctx,
+		`INSERT INTO users (email, password_hash, name, is_platform_admin, must_change_password, is_active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		email, passwordHash, strings.TrimSpace(name), isPlatformAdmin, mustChangePassword, isActive,
+	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
 func (r *Repository) SetUserPasswordAndClearMustChange(ctx context.Context, userID int64, passwordHash string) error {
-	res, err := r.ex.ExecContext(ctx, `UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`, passwordHash, userID)
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2`, passwordHash, userID)
 	if err != nil {
 		return err
 	}
@@ -132,7 +126,7 @@ func (r *Repository) UpdateOwnProfile(ctx context.Context, userID int64, email, 
 	}
 	if passwordHash != nil {
 		res, err := r.ex.ExecContext(ctx,
-			`UPDATE users SET email = ?, name = ?, password_hash = ?, must_change_password = 0 WHERE id = ?`,
+			`UPDATE users SET email = $1, name = $2, password_hash = $3, must_change_password = FALSE WHERE id = $4`,
 			strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), *passwordHash, userID,
 		)
 		if err != nil {
@@ -149,7 +143,7 @@ func (r *Repository) UpdateOwnProfile(ctx context.Context, userID int64, email, 
 	}
 
 	res, err := r.ex.ExecContext(ctx,
-		`UPDATE users SET email = ?, name = ? WHERE id = ?`,
+		`UPDATE users SET email = $1, name = $2 WHERE id = $3`,
 		strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), userID,
 	)
 	if err != nil {
@@ -166,14 +160,15 @@ func (r *Repository) UpdateOwnProfile(ctx context.Context, userID int64, email, 
 }
 
 func (r *Repository) CreateCompany(ctx context.Context, name string) (int64, error) {
-	res, err := r.ex.ExecContext(ctx,
-		`INSERT INTO companies (name) VALUES (?)`,
+	var id int64
+	err := r.ex.QueryRowContext(ctx,
+		`INSERT INTO companies (name) VALUES ($1) RETURNING id`,
 		strings.TrimSpace(name),
-	)
+	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
 func (r *Repository) AddCompanyUser(ctx context.Context, companyID, userID int64, role string) error {
@@ -181,7 +176,7 @@ func (r *Repository) AddCompanyUser(ctx context.Context, companyID, userID int64
 		role = "admin"
 	}
 	_, err := r.ex.ExecContext(ctx,
-		`INSERT INTO company_users (company_id, user_id, role) VALUES (?, ?, ?)`,
+		`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, $3)`,
 		companyID, userID, role,
 	)
 	return err
@@ -195,7 +190,7 @@ func (r *Repository) FirstCompanyIDForUser(ctx context.Context, userID int64) (i
 		`SELECT cu.company_id, cu.role
 FROM company_users cu
 JOIN companies c ON c.id = cu.company_id
-WHERE cu.user_id = ? AND c.is_active = 1
+WHERE cu.user_id = $1 AND c.is_active = TRUE
 ORDER BY cu.company_id ASC LIMIT 1`,
 		userID,
 	).Scan(&cid, &role)
@@ -207,7 +202,7 @@ ORDER BY cu.company_id ASC LIMIT 1`,
 
 func (r *Repository) CountPlatformAdmins(ctx context.Context) (int64, error) {
 	var total int64
-	err := r.ex.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE is_platform_admin = 1`).Scan(&total)
+	err := r.ex.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE is_platform_admin = TRUE`).Scan(&total)
 	if err != nil {
 		return 0, err
 	}
@@ -229,7 +224,7 @@ LEFT JOIN (
 	SELECT cu.company_id, COUNT(1) AS admin_count
 	FROM company_users cu
 	JOIN users u ON u.id = cu.user_id
-	WHERE cu.role = 'admin' AND u.is_platform_admin = 0
+	WHERE cu.role = 'admin' AND u.is_platform_admin = FALSE
 	GROUP BY cu.company_id
 ) ac ON ac.company_id = c.id
 ORDER BY c.id ASC
@@ -241,11 +236,9 @@ ORDER BY c.id ASC
 	var out []Company
 	for rows.Next() {
 		var c Company
-		var ia int
-		if err := rows.Scan(&c.ID, &c.Name, &ia, &c.ClientCount, &c.AdminCount); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.IsActive, &c.ClientCount, &c.AdminCount); err != nil {
 			return nil, err
 		}
-		c.IsActive = ia != 0
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -258,29 +251,29 @@ func (r *Repository) PatchCompany(ctx context.Context, companyID int64, name *st
 	}
 	var parts []string
 	var args []any
+	n := 1
 	if name != nil {
-		parts = append(parts, "name = ?")
+		parts = append(parts, fmt.Sprintf("name = $%d", n))
 		args = append(args, strings.TrimSpace(*name))
+		n++
 	}
 	if isActive != nil {
-		v := 0
-		if *isActive {
-			v = 1
-		}
-		parts = append(parts, "is_active = ?")
-		args = append(args, v)
+		parts = append(parts, fmt.Sprintf("is_active = $%d", n))
+		args = append(args, *isActive)
+		n++
 	}
+	idPH := n
 	args = append(args, companyID)
-	q := "UPDATE companies SET " + strings.Join(parts, ", ") + " WHERE id = ?"
+	q := fmt.Sprintf("UPDATE companies SET %s WHERE id = $%d", strings.Join(parts, ", "), idPH)
 	res, err := r.ex.ExecContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
+	aff, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	if aff == 0 {
 		return sql.ErrNoRows
 	}
 	return nil
@@ -292,7 +285,7 @@ SELECT u.id, cu.company_id, c.name, u.email, u.name, cu.role, u.is_active
 FROM company_users cu
 JOIN users u ON u.id = cu.user_id
 JOIN companies c ON c.id = cu.company_id
-WHERE cu.role = 'admin' AND u.is_platform_admin = 0
+WHERE cu.role = 'admin' AND u.is_platform_admin = FALSE
 ORDER BY cu.company_id ASC, u.id ASC
 `
 	rows, err := r.ex.QueryContext(ctx, q)
@@ -303,18 +296,16 @@ ORDER BY cu.company_id ASC, u.id ASC
 	var out []CompanyAdmin
 	for rows.Next() {
 		var a CompanyAdmin
-		var ia int
-		if err := rows.Scan(&a.UserID, &a.CompanyID, &a.CompanyName, &a.Email, &a.Name, &a.Role, &ia); err != nil {
+		if err := rows.Scan(&a.UserID, &a.CompanyID, &a.CompanyName, &a.Email, &a.Name, &a.Role, &a.IsActive); err != nil {
 			return nil, err
 		}
-		a.IsActive = ia != 0
 		out = append(out, a)
 	}
 	return out, rows.Err()
 }
 
 func (r *Repository) UpdateCompanyAdmin(ctx context.Context, userID int64, email, name string) error {
-	res, err := r.ex.ExecContext(ctx, `UPDATE users SET email = ?, name = ? WHERE id = ? AND is_platform_admin = 0`, strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), userID)
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET email = $1, name = $2 WHERE id = $3 AND is_platform_admin = FALSE`, strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), userID)
 	if err != nil {
 		return err
 	}
@@ -329,7 +320,7 @@ func (r *Repository) UpdateCompanyAdmin(ctx context.Context, userID int64, email
 }
 
 func (r *Repository) UpdateCompanyAdminPassword(ctx context.Context, userID int64, passwordHash string) error {
-	res, err := r.ex.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND is_platform_admin = 0`, passwordHash, userID)
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2 AND is_platform_admin = FALSE`, passwordHash, userID)
 	if err != nil {
 		return err
 	}
@@ -346,7 +337,7 @@ func (r *Repository) UpdateCompanyAdminPassword(ctx context.Context, userID int6
 // SetCompanyAdminTemporaryPassword asigna hash y obliga cambio en próximo acceso.
 func (r *Repository) SetCompanyAdminTemporaryPassword(ctx context.Context, userID int64, passwordHash string) error {
 	res, err := r.ex.ExecContext(ctx,
-		`UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ? AND is_platform_admin = 0`,
+		`UPDATE users SET password_hash = $1, must_change_password = TRUE WHERE id = $2 AND is_platform_admin = FALSE`,
 		passwordHash, userID,
 	)
 	if err != nil {
@@ -364,11 +355,7 @@ func (r *Repository) SetCompanyAdminTemporaryPassword(ctx context.Context, userI
 
 // SetCompanyAdminActive activa o desactiva el login del usuario (no aplica a platform_admin).
 func (r *Repository) SetCompanyAdminActive(ctx context.Context, userID int64, active bool) error {
-	v := 0
-	if active {
-		v = 1
-	}
-	res, err := r.ex.ExecContext(ctx, `UPDATE users SET is_active = ? WHERE id = ? AND is_platform_admin = 0`, v, userID)
+	res, err := r.ex.ExecContext(ctx, `UPDATE users SET is_active = $1 WHERE id = $2 AND is_platform_admin = FALSE`, active, userID)
 	if err != nil {
 		return err
 	}
