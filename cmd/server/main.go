@@ -12,8 +12,10 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 
+	"github.com/flowpay/flowpay-sso/internal/clients"
 	"github.com/flowpay/flowpay-sso/internal/config"
 	"github.com/flowpay/flowpay-sso/internal/handler"
+	"github.com/flowpay/flowpay-sso/internal/middleware"
 	"github.com/flowpay/flowpay-sso/internal/repo"
 )
 
@@ -34,6 +36,8 @@ func main() {
 
 	rp := repo.New(db)
 	auth := handler.NewAuth(rp, []byte(cfg.JWTSecret), cfg.JWTTTL)
+	clientSvc := clients.New(rp)
+	clientsH := handler.NewClientsHTTP(clientSvc)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -64,6 +68,19 @@ func main() {
 	r.POST("/auth/platform/company-admins", auth.CreateCompanyAdmin)
 	r.PATCH("/auth/platform/company-admins/:user_id", auth.UpdateCompanyAdmin)
 	r.POST("/auth/platform/company-admins/:user_id/reset-password", auth.ResetCompanyAdminPassword)
+
+	api := r.Group("/api")
+	api.Use(middleware.BearerJWT(cfg.JWTSecret))
+	{
+		api.GET("/clients", clientsH.ListClients)
+		api.POST("/clients", clientsH.CreateClient)
+		api.PATCH("/clients/:id", clientsH.PatchClient)
+		api.POST("/clients/import-distributor-rows", clientsH.ImportDistributorRows)
+		api.GET("/clients/import-batches", clientsH.ListImportBatches)
+		api.GET("/clients/import-batches/:id", clientsH.GetImportBatch)
+		api.GET("/clients/:id", clientsH.GetClient)
+		api.DELETE("/clients/:id", clientsH.DeleteClient)
+	}
 
 	printStartupStatus(db, cfg.Addr, cfg.DSN, cfg.JWTSecret)
 	if err := r.Run(cfg.Addr); err != nil {
@@ -97,6 +114,7 @@ func printStartupStatus(db *sql.DB, addr, dsn, jwtSecret string) {
 	log.Printf(cyan+"║"+reset+" %s", ok("Healthcheck: GET "+addr+"/health"))
 	log.Printf(cyan+"║"+reset+" %s", fmt.Sprintf("%sAuth endpoints:%s /auth/login, /auth/register, /auth/me", bold, reset))
 	log.Printf(cyan+"║"+reset+" %s", fmt.Sprintf("%sAdmin endpoints:%s /auth/platform/*", bold, reset))
+	log.Printf(cyan+"║"+reset+" %s", fmt.Sprintf("%sClientes (JWT):%s GET/POST/PATCH/DELETE %s/api/clients*", bold, reset, addr))
 
 	if strings.TrimSpace(jwtSecret) == "" {
 		log.Printf(cyan+"║"+reset+" %s", warn("FLOWPAY_JWT_SECRET vacío"))
