@@ -1,4 +1,4 @@
-package repo
+package repository
 
 import (
 	"context"
@@ -78,7 +78,7 @@ type ClientPatch struct {
 	ExternalCode    *string
 }
 
-func (r *Repository) ListClients(ctx context.Context, companyID int64) ([]ClientRow, error) {
+func (db *DB) ListClients(ctx context.Context, companyID int64) ([]ClientRow, error) {
 	q := `
 SELECT c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.address,
        c.client_code, c.branch_name, c.payment_terms,
@@ -96,7 +96,7 @@ GROUP BY c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.addres
          c.created_at, c.is_active, c.followup_channel
 ORDER BY c.created_at DESC, c.id DESC
 `
-	rows, err := r.ex.QueryContext(ctx, q, companyID)
+	rows, err := db.ex.QueryContext(ctx, q, companyID)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ ORDER BY c.created_at DESC, c.id DESC
 	return out, rows.Err()
 }
 
-func (r *Repository) GetClient(ctx context.Context, companyID, clientID int64) (*ClientRow, error) {
+func (db *DB) GetClient(ctx context.Context, companyID, clientID int64) (*ClientRow, error) {
 	q := `
 SELECT c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.address,
        c.client_code, c.branch_name, c.payment_terms,
@@ -151,7 +151,7 @@ GROUP BY c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.addres
 	var isActive bool
 	var email, phone, extCode, addr sql.NullString
 	var clientCode, branchName, payTerms sql.NullString
-	err := r.ex.QueryRowContext(ctx, q, companyID, clientID).Scan(
+	err := db.ex.QueryRowContext(ctx, q, companyID, clientID).Scan(
 		&cr.ID, &cr.CompanyID, &cr.Name, &email, &phone, &extCode, &addr,
 		&clientCode, &branchName, &payTerms,
 		&cr.CreatedAt, &isActive, &cr.FollowupChannel, &cr.TotalOwed, &cr.OverdueCnt, &cr.ChargeCount,
@@ -176,8 +176,8 @@ GROUP BY c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.addres
 	return &cr, nil
 }
 
-func (r *Repository) DeleteClient(ctx context.Context, companyID, clientID int64) error {
-	res, err := r.ex.ExecContext(ctx,
+func (db *DB) DeleteClient(ctx context.Context, companyID, clientID int64) error {
+	res, err := db.ex.ExecContext(ctx,
 		`DELETE FROM clients WHERE id = $1 AND company_id = $2`,
 		clientID, companyID,
 	)
@@ -202,7 +202,7 @@ func trimImport(s string, max int) string {
 	return s
 }
 
-func (r *Repository) CreateClient(ctx context.Context, companyID int64, name, email, phone, extCode, address, clientCode, branchName, payTerms string) (int64, error) {
+func (db *DB) CreateClient(ctx context.Context, companyID int64, name, email, phone, extCode, address, clientCode, branchName, payTerms string) (int64, error) {
 	name = trimImport(name, 255)
 	if name == "" {
 		return 0, errors.New("nombre vacío")
@@ -216,7 +216,7 @@ func (r *Repository) CreateClient(ctx context.Context, companyID int64, name, em
 	payTerms = trimImport(payTerms, 64)
 
 	var id int64
-	err := r.ex.QueryRowContext(ctx,
+	err := db.ex.QueryRowContext(ctx,
 		`INSERT INTO clients (
 			company_id, name, email, phone, external_code, address,
 			client_code, branch_name, payment_terms,
@@ -234,7 +234,7 @@ func (r *Repository) CreateClient(ctx context.Context, companyID int64, name, em
 	return id, nil
 }
 
-func (r *Repository) UpsertClientImport(ctx context.Context, companyID int64, in ClientImportFields) (inserted bool, err error) {
+func (db *DB) UpsertClientImport(ctx context.Context, companyID int64, in ClientImportFields) (inserted bool, err error) {
 	ec := trimImport(in.ExternalCode, 128)
 	if ec == "" {
 		return false, errors.New("external_code vacío")
@@ -250,7 +250,7 @@ func (r *Repository) UpsertClientImport(ctx context.Context, companyID int64, in
 	bn := trimImport(in.BranchName, 255)
 	pay := trimImport(in.PaymentTerms, 64)
 	active := in.IsActive
-	res, err := r.ex.ExecContext(ctx, `
+	res, err := db.ex.ExecContext(ctx, `
 UPDATE clients SET
   name = $1, email = NULLIF($2, ''), phone = NULLIF($3, ''), address = NULLIF($4, ''), is_active = $5,
   client_code = NULLIF($6, ''), branch_name = NULLIF($7, ''),
@@ -268,7 +268,7 @@ WHERE company_id = $9 AND external_code = $10`,
 	if n > 0 {
 		return false, nil
 	}
-	_, err = r.ex.ExecContext(ctx, `
+	_, err = db.ex.ExecContext(ctx, `
 INSERT INTO clients (
   company_id, name, email, phone, external_code, address,
   client_code, branch_name, payment_terms,
@@ -288,7 +288,7 @@ INSERT INTO clients (
 	return true, nil
 }
 
-func (r *Repository) PatchClient(ctx context.Context, companyID, clientID int64, p ClientPatch) error {
+func (db *DB) PatchClient(ctx context.Context, companyID, clientID int64, p ClientPatch) error {
 	var sets []string
 	var args []any
 	n := 1
@@ -349,7 +349,7 @@ func (r *Repository) PatchClient(ctx context.Context, companyID, clientID int64,
 	compPH := n + 1
 	args = append(args, clientID, companyID)
 	q := fmt.Sprintf("UPDATE clients SET %s WHERE id = $%d AND company_id = $%d", strings.Join(sets, ", "), idPH, compPH)
-	res, err := r.ex.ExecContext(ctx, q, args...)
+	res, err := db.ex.ExecContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}
@@ -365,7 +365,7 @@ func (r *Repository) PatchClient(ctx context.Context, companyID, clientID int64,
 
 const clientImportBatchListLimit = 100
 
-func (r *Repository) InsertClientImportBatch(ctx context.Context, companyID int64, userID *int64, source, filename string, createdCount, updatedCount, errorCount int, errorsJSON []byte) (int64, error) {
+func (db *DB) InsertClientImportBatch(ctx context.Context, companyID int64, userID *int64, source, filename string, createdCount, updatedCount, errorCount int, errorsJSON []byte) (int64, error) {
 	var uid sql.NullInt64
 	if userID != nil && *userID != 0 {
 		uid = sql.NullInt64{Int64: *userID, Valid: true}
@@ -382,7 +382,7 @@ func (r *Repository) InsertClientImportBatch(ctx context.Context, companyID int6
 		errBlob = errorsJSON
 	}
 	var id int64
-	err := r.ex.QueryRowContext(ctx, `
+	err := db.ex.QueryRowContext(ctx, `
 INSERT INTO client_import_batches (company_id, user_id, source, filename, created_count, updated_count, error_count, errors_json)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
 		companyID, uid, source, fnArg, createdCount, updatedCount, errorCount, errBlob,
@@ -393,14 +393,14 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
 	return id, nil
 }
 
-func (r *Repository) ListClientImportBatches(ctx context.Context, companyID int64) ([]ClientImportBatchRow, error) {
+func (db *DB) ListClientImportBatches(ctx context.Context, companyID int64) ([]ClientImportBatchRow, error) {
 	q := `
 SELECT id, company_id, user_id, source, filename, created_at, created_count, updated_count, error_count
 FROM client_import_batches
 WHERE company_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $2`
-	rows, err := r.ex.QueryContext(ctx, q, companyID, clientImportBatchListLimit)
+	rows, err := db.ex.QueryContext(ctx, q, companyID, clientImportBatchListLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +423,7 @@ LIMIT $2`
 	return out, rows.Err()
 }
 
-func (r *Repository) GetClientImportBatch(ctx context.Context, companyID, batchID int64) (*ClientImportBatchRow, error) {
+func (db *DB) GetClientImportBatch(ctx context.Context, companyID, batchID int64) (*ClientImportBatchRow, error) {
 	q := `
 SELECT id, company_id, user_id, source, filename, created_at, created_count, updated_count, error_count, errors_json
 FROM client_import_batches
@@ -433,7 +433,7 @@ LIMIT 1`
 	var uid sql.NullInt64
 	var fn sql.NullString
 	var errJSON []byte
-	err := r.ex.QueryRowContext(ctx, q, companyID, batchID).Scan(
+	err := db.ex.QueryRowContext(ctx, q, companyID, batchID).Scan(
 		&b.ID, &b.CompanyID, &uid, &b.Source, &fn, &b.CreatedAt, &b.CreatedCount, &b.UpdatedCount, &b.ErrorCount, &errJSON,
 	)
 	if err != nil {

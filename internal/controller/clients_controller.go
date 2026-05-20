@@ -1,4 +1,4 @@
-package handler
+package controller
 
 import (
 	"database/sql"
@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/flowpay/flowpay-sso/internal/clients"
+	"github.com/flowpay/flowpay-sso/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-type ClientsHTTP struct {
-	Svc *clients.Service
+type ClientsController struct {
+	Svc *service.ClientsService
 }
 
-func NewClientsHTTP(svc *clients.Service) *ClientsHTTP {
-	return &ClientsHTTP{Svc: svc}
+func NewClientsController(svc *service.ClientsService) *ClientsController {
+	return &ClientsController{Svc: svc}
 }
 
 func companyIDFromJWT(c *gin.Context) int64 {
@@ -37,7 +37,7 @@ func jwtUserID(c *gin.Context) *int64 {
 	return nil
 }
 
-func (h *ClientsHTTP) ListClients(c *gin.Context) {
+func (h *ClientsController) ListClients(c *gin.Context) {
 	list, err := h.Svc.ListClients(c.Request.Context(), companyIDFromJWT(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -74,13 +74,13 @@ func (b patchClientBody) hasPatchFields() bool {
 		b.ClientCode != nil || b.BranchName != nil || b.PaymentTerms != nil
 }
 
-func (h *ClientsHTTP) CreateClient(c *gin.Context) {
+func (h *ClientsController) CreateClient(c *gin.Context) {
 	var body createClientBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
 		return
 	}
-	id, err := h.Svc.CreateClient(c.Request.Context(), companyIDFromJWT(c), clients.CreateClientInput{
+	id, err := h.Svc.CreateClient(c.Request.Context(), companyIDFromJWT(c), service.CreateClientInput{
 		Name:         body.Name,
 		Email:        body.Email,
 		Phone:        body.Phone,
@@ -96,7 +96,7 @@ func (h *ClientsHTTP) CreateClient(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"id": id})
 }
 
-func (h *ClientsHTTP) PatchClient(c *gin.Context) {
+func (h *ClientsController) PatchClient(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
@@ -111,7 +111,7 @@ func (h *ClientsHTTP) PatchClient(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "indica al menos un campo para actualizar"})
 		return
 	}
-	if err := h.Svc.PatchClient(c.Request.Context(), companyIDFromJWT(c), id, clients.PatchClientInput{
+	if err := h.Svc.PatchClient(c.Request.Context(), companyIDFromJWT(c), id, service.PatchClientInput{
 		IsActive:        body.IsActive,
 		FollowupChannel: body.FollowupChannel,
 		Name:            body.Name,
@@ -122,7 +122,7 @@ func (h *ClientsHTTP) PatchClient(c *gin.Context) {
 		BranchName:      body.BranchName,
 		PaymentTerms:    body.PaymentTerms,
 	}); err != nil {
-		if clients.ErrNotFound(err) {
+		if service.ErrNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
@@ -132,7 +132,7 @@ func (h *ClientsHTTP) PatchClient(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func (h *ClientsHTTP) GetClient(c *gin.Context) {
+func (h *ClientsController) GetClient(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
@@ -140,7 +140,7 @@ func (h *ClientsHTTP) GetClient(c *gin.Context) {
 	}
 	dto, err := h.Svc.GetClient(c.Request.Context(), companyIDFromJWT(c), id)
 	if err != nil {
-		if clients.ErrNotFound(err) {
+		if service.ErrNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
@@ -150,14 +150,14 @@ func (h *ClientsHTTP) GetClient(c *gin.Context) {
 	c.JSON(http.StatusOK, dto)
 }
 
-func (h *ClientsHTTP) DeleteClient(c *gin.Context) {
+func (h *ClientsController) DeleteClient(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
 	if err := h.Svc.DeleteClient(c.Request.Context(), companyIDFromJWT(c), id); err != nil {
-		if clients.ErrNotFound(err) {
+		if service.ErrNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
@@ -172,7 +172,7 @@ type importDistributorRowsBody struct {
 	Filename *string    `json:"filename"`
 }
 
-func (h *ClientsHTTP) ImportDistributorRows(c *gin.Context) {
+func (h *ClientsController) ImportDistributorRows(c *gin.Context) {
 	var body importDistributorRowsBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "JSON inválido: se espera { \"rows\": [[...]] }"})
@@ -197,7 +197,7 @@ func (h *ClientsHTTP) ImportDistributorRows(c *gin.Context) {
 	c.JSON(http.StatusOK, res)
 }
 
-func (h *ClientsHTTP) ListImportBatches(c *gin.Context) {
+func (h *ClientsController) ListImportBatches(c *gin.Context) {
 	list, err := h.Svc.ListClientImportBatches(c.Request.Context(), companyIDFromJWT(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -206,7 +206,7 @@ func (h *ClientsHTTP) ListImportBatches(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
-func (h *ClientsHTTP) GetImportBatch(c *gin.Context) {
+func (h *ClientsController) GetImportBatch(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido"})
@@ -214,7 +214,7 @@ func (h *ClientsHTTP) GetImportBatch(c *gin.Context) {
 	}
 	detail, err := h.Svc.GetClientImportBatch(c.Request.Context(), companyIDFromJWT(c), id)
 	if err != nil {
-		if errors.Is(err, clients.ErrImportHistoryUnavailable) {
+		if errors.Is(err, service.ErrImportHistoryUnavailable) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"error": "Falta la tabla de historial (client_import_batches). Ejecutá el DDL en PostgreSQL (postgresql_migration/02_schema.sql) y reiniciá el API.",
 			})

@@ -8,6 +8,24 @@ Servicio **apartado** del API de negocio (`flowpay-backend`). Centraliza autenti
 - **Despliegue y escala independientes**: puedes actualizar login sin tocar el core de FlowPay (y al revés).
 - **Menos riesgo de mezclar** middleware de auth con handlers de cobros en un solo binario monolítico gigante.
 
+## Estructura del código
+
+```
+flowpay-sso/
+├── cmd/server/
+├── internal/
+│   ├── routes/           → URLs (/auth/*, /api/clients)
+│   ├── controller/       → HTTP (auth, clientes)
+│   ├── service/          → lógica de clientes
+│   ├── repository/       → SQL (tipo DB)
+│   ├── config/
+│   ├── domain/
+│   ├── middleware/
+│   └── authjwt/
+```
+
+Misma convención que `flowpay-payments` y `flowpay-backend`.
+
 ## Qué va aquí (roadmap)
 
 - Registro / login (email, magic link, etc.).

@@ -1,4 +1,4 @@
-package clients
+package service
 
 import (
 	"context"
@@ -11,27 +11,27 @@ import (
 
 	"github.com/flowpay/flowpay-sso/internal/dberrors"
 	"github.com/flowpay/flowpay-sso/internal/domain"
-	"github.com/flowpay/flowpay-sso/internal/repo"
+	"github.com/flowpay/flowpay-sso/internal/repository"
 )
 
 type ClientDTO struct {
-	repo.ClientRow
+	repository.ClientRow
 	RiskLevel string `json:"risk_level"`
 }
 
-type Service struct {
-	Repo *repo.Repository
+type ClientsService struct {
+	Repo *repository.DB
 }
 
-func New(r *repo.Repository) *Service {
-	return &Service{Repo: r}
+func NewClientsService(db *repository.DB) *ClientsService {
+	return &ClientsService{Repo: db}
 }
 
 func ErrNotFound(err error) bool {
 	return errors.Is(err, sql.ErrNoRows)
 }
 
-func (s *Service) ListClients(ctx context.Context, companyID int64) ([]ClientDTO, error) {
+func (s *ClientsService) ListClients(ctx context.Context, companyID int64) ([]ClientDTO, error) {
 	rows, err := s.Repo.ListClients(ctx, companyID)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (s *Service) ListClients(ctx context.Context, companyID int64) ([]ClientDTO
 	return out, nil
 }
 
-func (s *Service) GetClient(ctx context.Context, companyID, clientID int64) (*ClientDTO, error) {
+func (s *ClientsService) GetClient(ctx context.Context, companyID, clientID int64) (*ClientDTO, error) {
 	row, err := s.Repo.GetClient(ctx, companyID, clientID)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func (s *Service) GetClient(ctx context.Context, companyID, clientID int64) (*Cl
 	}, nil
 }
 
-func (s *Service) DeleteClient(ctx context.Context, companyID, clientID int64) error {
+func (s *ClientsService) DeleteClient(ctx context.Context, companyID, clientID int64) error {
 	return s.Repo.DeleteClient(ctx, companyID, clientID)
 }
 
@@ -79,7 +79,7 @@ type CreateClientInput struct {
 	PaymentTerms string
 }
 
-func (s *Service) CreateClient(ctx context.Context, companyID int64, in CreateClientInput) (int64, error) {
+func (s *ClientsService) CreateClient(ctx context.Context, companyID int64, in CreateClientInput) (int64, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return 0, errors.New("el nombre del encargado (NOMBRE) es obligatorio")
@@ -125,7 +125,7 @@ type PatchClientInput struct {
 	PaymentTerms    *string
 }
 
-func (s *Service) PatchClient(ctx context.Context, companyID, clientID int64, in PatchClientInput) error {
+func (s *ClientsService) PatchClient(ctx context.Context, companyID, clientID int64, in PatchClientInput) error {
 	var follow *string
 	if in.FollowupChannel != nil {
 		v := strings.TrimSpace(strings.ToLower(*in.FollowupChannel))
@@ -134,7 +134,7 @@ func (s *Service) PatchClient(ctx context.Context, companyID, clientID int64, in
 		}
 		follow = &v
 	}
-	patch := repo.ClientPatch{
+	patch := repository.ClientPatch{
 		IsActive:        in.IsActive,
 		FollowupChannel: follow,
 	}
@@ -199,7 +199,7 @@ var distributorHeaderSet = func() map[string]struct{} {
 
 const maxImportDataRows = 10000
 
-func (s *Service) ImportClientsDistributorRows(ctx context.Context, companyID int64, rows [][]string) (*ImportDistributorResult, error) {
+func (s *ClientsService) ImportClientsDistributorRows(ctx context.Context, companyID int64, rows [][]string) (*ImportDistributorResult, error) {
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("sin filas")
 	}
@@ -243,7 +243,7 @@ func (s *Service) ImportClientsDistributorRows(ctx context.Context, companyID in
 			continue
 		}
 
-		inserted, err := s.Repo.UpsertClientImport(ctx, companyID, repo.ClientImportFields{
+		inserted, err := s.Repo.UpsertClientImport(ctx, companyID, repository.ClientImportFields{
 			Name:         nombre,
 			Email:        email,
 			Phone:        tel,
@@ -364,7 +364,7 @@ type ClientImportBatchDetail struct {
 	Errors []ImportDistributorErr `json:"errors"`
 }
 
-func (s *Service) RecordClientImportBatch(ctx context.Context, companyID int64, userID *int64, source, filename string, res *ImportDistributorResult) (int64, error) {
+func (s *ClientsService) RecordClientImportBatch(ctx context.Context, companyID int64, userID *int64, source, filename string, res *ImportDistributorResult) (int64, error) {
 	var errJSON []byte
 	if len(res.Errors) > 0 {
 		var err error
@@ -376,7 +376,7 @@ func (s *Service) RecordClientImportBatch(ctx context.Context, companyID int64, 
 	return s.Repo.InsertClientImportBatch(ctx, companyID, userID, source, filename, res.Created, res.Updated, len(res.Errors), errJSON)
 }
 
-func (s *Service) ListClientImportBatches(ctx context.Context, companyID int64) ([]ClientImportBatchListItem, error) {
+func (s *ClientsService) ListClientImportBatches(ctx context.Context, companyID int64) ([]ClientImportBatchListItem, error) {
 	rows, err := s.Repo.ListClientImportBatches(ctx, companyID)
 	if err != nil {
 		if dberrors.IsUndefinedTable(err) {
@@ -399,7 +399,7 @@ func (s *Service) ListClientImportBatches(ctx context.Context, companyID int64) 
 	return out, nil
 }
 
-func (s *Service) GetClientImportBatch(ctx context.Context, companyID, batchID int64) (*ClientImportBatchDetail, error) {
+func (s *ClientsService) GetClientImportBatch(ctx context.Context, companyID, batchID int64) (*ClientImportBatchDetail, error) {
 	r, err := s.Repo.GetClientImportBatch(ctx, companyID, batchID)
 	if err != nil {
 		if dberrors.IsUndefinedTable(err) {
