@@ -1,4 +1,4 @@
-package handler
+package controller
 
 import (
 	"crypto/rand"
@@ -11,22 +11,22 @@ import (
 	"time"
 
 	"github.com/flowpay/flowpay-sso/internal/authjwt"
-	"github.com/flowpay/flowpay-sso/internal/repo"
+	"github.com/flowpay/flowpay-sso/internal/repository"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Auth struct {
-	Repo      *repo.Repository
+type AuthController struct {
+	Repo      *repository.DB
 	JWTSecret []byte
 	JWTTTL    time.Duration
 }
 
-func NewAuth(r *repo.Repository, secret []byte, ttl time.Duration) *Auth {
+func NewAuthController(db *repository.DB, secret []byte, ttl time.Duration) *AuthController {
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
 	}
-	return &Auth{Repo: r, JWTSecret: secret, JWTTTL: ttl}
+	return &AuthController{Repo: db, JWTSecret: secret, JWTTTL: ttl}
 }
 
 type registerBody struct {
@@ -116,7 +116,7 @@ func generateTemporaryPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-func (h *Auth) Register(c *gin.Context) {
+func (h *AuthController) Register(c *gin.Context) {
 	var body registerBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "json inválido"})
@@ -176,7 +176,7 @@ func (h *Auth) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, tokenResponse(token, h.JWTTTL))
 }
 
-func (h *Auth) Login(c *gin.Context) {
+func (h *AuthController) Login(c *gin.Context) {
 	var body loginBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "json inválido"})
@@ -235,7 +235,7 @@ func (h *Auth) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, tokenResponse(token, h.JWTTTL))
 }
 
-func (h *Auth) authorize(c *gin.Context, allowedRoles ...string) (*authjwt.AccessClaims, bool) {
+func (h *AuthController) authorize(c *gin.Context, allowedRoles ...string) (*authjwt.AccessClaims, bool) {
 	hdr := strings.TrimSpace(c.GetHeader("Authorization"))
 	if hdr == "" || !strings.HasPrefix(hdr, "Bearer ") {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "se requiere Bearer token"})
@@ -256,7 +256,7 @@ func (h *Auth) authorize(c *gin.Context, allowedRoles ...string) (*authjwt.Acces
 	return nil, false
 }
 
-func (h *Auth) GetProfile(c *gin.Context) {
+func (h *AuthController) GetProfile(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin", "admin", "member")
 	if !ok {
 		return
@@ -280,7 +280,7 @@ func (h *Auth) GetProfile(c *gin.Context) {
 	})
 }
 
-func (h *Auth) UpdateProfile(c *gin.Context) {
+func (h *AuthController) UpdateProfile(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin", "admin", "member")
 	if !ok {
 		return
@@ -325,7 +325,7 @@ func (h *Auth) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func (h *Auth) CreateCompanyWithAdmin(c *gin.Context) {
+func (h *AuthController) CreateCompanyWithAdmin(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}
@@ -394,7 +394,7 @@ func (h *Auth) CreateCompanyWithAdmin(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"company_id": companyID, "admin_user_id": userID})
 }
 
-func (h *Auth) CreateCompany(c *gin.Context) {
+func (h *AuthController) CreateCompany(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}
@@ -416,7 +416,7 @@ func (h *Auth) CreateCompany(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"company_id": companyID})
 }
 
-func (h *Auth) CreateCompanyUser(c *gin.Context) {
+func (h *AuthController) CreateCompanyUser(c *gin.Context) {
 	claims, ok := h.authorize(c, "admin")
 	if !ok {
 		return
@@ -479,7 +479,7 @@ func (h *Auth) CreateCompanyUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID, "company_id": claims.CompanyID, "role": body.Role})
 }
 
-func (h *Auth) BootstrapPlatformAdmin(c *gin.Context) {
+func (h *AuthController) BootstrapPlatformAdmin(c *gin.Context) {
 	total, err := h.Repo.CountPlatformAdmins(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -523,7 +523,7 @@ func (h *Auth) BootstrapPlatformAdmin(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID, "email": body.Email, "role": "platform_admin"})
 }
 
-func (h *Auth) CreateCompanyAdmin(c *gin.Context) {
+func (h *AuthController) CreateCompanyAdmin(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}
@@ -582,7 +582,7 @@ func (h *Auth) CreateCompanyAdmin(c *gin.Context) {
 	})
 }
 
-func (h *Auth) FirstPasswordChange(c *gin.Context) {
+func (h *AuthController) FirstPasswordChange(c *gin.Context) {
 	var body firstPasswordChangeBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "json inválido"})
@@ -630,7 +630,7 @@ func (h *Auth) FirstPasswordChange(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func (h *Auth) ListCompanies(c *gin.Context) {
+func (h *AuthController) ListCompanies(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}
@@ -642,7 +642,7 @@ func (h *Auth) ListCompanies(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
-func (h *Auth) UpdateCompany(c *gin.Context) {
+func (h *AuthController) UpdateCompany(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}
@@ -680,7 +680,7 @@ func (h *Auth) UpdateCompany(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func (h *Auth) ListCompanyAdmins(c *gin.Context) {
+func (h *AuthController) ListCompanyAdmins(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}
@@ -692,7 +692,7 @@ func (h *Auth) ListCompanyAdmins(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
-func (h *Auth) UpdateCompanyAdmin(c *gin.Context) {
+func (h *AuthController) UpdateCompanyAdmin(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}
@@ -746,7 +746,7 @@ func (h *Auth) UpdateCompanyAdmin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func (h *Auth) ResetCompanyAdminPassword(c *gin.Context) {
+func (h *AuthController) ResetCompanyAdminPassword(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
 	}

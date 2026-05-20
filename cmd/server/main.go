@@ -12,11 +12,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 
-	"github.com/flowpay/flowpay-sso/internal/clients"
 	"github.com/flowpay/flowpay-sso/internal/config"
-	"github.com/flowpay/flowpay-sso/internal/handler"
-	"github.com/flowpay/flowpay-sso/internal/middleware"
-	"github.com/flowpay/flowpay-sso/internal/repo"
+	"github.com/flowpay/flowpay-sso/internal/controller"
+	"github.com/flowpay/flowpay-sso/internal/repository"
+	"github.com/flowpay/flowpay-sso/internal/routes"
+	"github.com/flowpay/flowpay-sso/internal/service"
 )
 
 func main() {
@@ -34,10 +34,10 @@ func main() {
 		log.Fatal("postgres ping:", err)
 	}
 
-	rp := repo.New(db)
-	auth := handler.NewAuth(rp, []byte(cfg.JWTSecret), cfg.JWTTTL)
-	clientSvc := clients.New(rp)
-	clientsH := handler.NewClientsHTTP(clientSvc)
+	repo := repository.New(db)
+	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL)
+	clientSvc := service.NewClientsService(repo)
+	clients := controller.NewClientsController(clientSvc)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -50,37 +50,7 @@ func main() {
 		MaxAge:           12 * 3600,
 	}))
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"service": "flowpay-sso", "status": "ok"})
-	})
-	r.POST("/auth/register", auth.Register)
-	r.POST("/auth/login", auth.Login)
-	r.GET("/auth/me", auth.GetProfile)
-	r.PATCH("/auth/me", auth.UpdateProfile)
-	r.POST("/auth/password/first-change", auth.FirstPasswordChange)
-	r.POST("/auth/bootstrap/platform-admin", auth.BootstrapPlatformAdmin)
-	r.POST("/auth/company/users", auth.CreateCompanyUser)
-	r.GET("/auth/platform/companies", auth.ListCompanies)
-	r.POST("/auth/platform/companies", auth.CreateCompany)
-	r.POST("/auth/platform/companies-with-admin", auth.CreateCompanyWithAdmin)
-	r.PATCH("/auth/platform/companies/:id", auth.UpdateCompany)
-	r.GET("/auth/platform/company-admins", auth.ListCompanyAdmins)
-	r.POST("/auth/platform/company-admins", auth.CreateCompanyAdmin)
-	r.PATCH("/auth/platform/company-admins/:user_id", auth.UpdateCompanyAdmin)
-	r.POST("/auth/platform/company-admins/:user_id/reset-password", auth.ResetCompanyAdminPassword)
-
-	api := r.Group("/api")
-	api.Use(middleware.BearerJWT(cfg.JWTSecret))
-	{
-		api.GET("/clients", clientsH.ListClients)
-		api.POST("/clients", clientsH.CreateClient)
-		api.PATCH("/clients/:id", clientsH.PatchClient)
-		api.POST("/clients/import-distributor-rows", clientsH.ImportDistributorRows)
-		api.GET("/clients/import-batches", clientsH.ListImportBatches)
-		api.GET("/clients/import-batches/:id", clientsH.GetImportBatch)
-		api.GET("/clients/:id", clientsH.GetClient)
-		api.DELETE("/clients/:id", clientsH.DeleteClient)
-	}
+	routes.Register(r, auth, clients, cfg.JWTSecret)
 
 	printStartupStatus(db, cfg.Addr, cfg.DSN, cfg.JWTSecret)
 	if err := r.Run(cfg.Addr); err != nil {
