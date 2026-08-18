@@ -17,6 +17,14 @@ func assignNullString(ns sql.NullString) *string {
 	return &s
 }
 
+func assignNullInt64(n sql.NullInt64) *int64 {
+	if !n.Valid {
+		return nil
+	}
+	v := n.Int64
+	return &v
+}
+
 type Client struct {
 	ID              int64     `json:"id"`
 	CompanyID       int64     `json:"company_id"`
@@ -31,6 +39,10 @@ type Client struct {
 	IsActive        bool      `json:"is_active"`
 	FollowupChannel string    `json:"followup_channel"`
 	CreatedAt       time.Time `json:"created_at"`
+	CreatedBy       *int64    `json:"created_by,omitempty"`
+	AssignedTo      *int64    `json:"assigned_to,omitempty"`
+	SellerUserID    *int64    `json:"seller_user_id,omitempty"`
+	SellerName      *string   `json:"seller_name,omitempty"`
 }
 
 type ClientImportFields struct {
@@ -43,6 +55,7 @@ type ClientImportFields struct {
 	ClientCode   string
 	BranchName   string
 	PaymentTerms string
+	CreatedBy    int64
 }
 
 type ClientImportBatchRow struct {
@@ -76,91 +89,48 @@ type ClientPatch struct {
 	BranchName      *string
 	PaymentTerms    *string
 	ExternalCode    *string
+	AssignedTo      *int64
 }
 
-func (db *DB) ListClients(ctx context.Context, companyID int64) ([]ClientRow, error) {
-	q := `
+const clientSelectSQL = `
 SELECT c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.address,
        c.client_code, c.branch_name, c.payment_terms,
        c.created_at,
        c.is_active,
        c.followup_channel,
+       c.created_by,
+       c.assigned_to,
+       COALESCE(c.assigned_to, c.created_by),
+       su.name,
        COALESCE(SUM(CASE WHEN i.paid_at IS NULL THEN i.amount ELSE 0 END), 0),
        COALESCE(SUM(CASE WHEN i.paid_at IS NULL AND i.due_date < CURRENT_DATE THEN 1 ELSE 0 END), 0),
        COUNT(i.id)
 FROM clients c
 LEFT JOIN charges i ON i.client_id = c.id AND i.company_id = c.company_id
-WHERE c.company_id = $1
-GROUP BY c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.address,
-         c.client_code, c.branch_name, c.payment_terms,
-         c.created_at, c.is_active, c.followup_channel
-ORDER BY c.created_at DESC, c.id DESC
+LEFT JOIN users su ON su.id = COALESCE(c.assigned_to, c.created_by)
 `
-	rows, err := db.ex.QueryContext(ctx, q, companyID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []ClientRow
-	for rows.Next() {
-		var cr ClientRow
-		var isActive bool
-		var email, phone, extCode, addr sql.NullString
-		var clientCode, branchName, payTerms sql.NullString
-		if err := rows.Scan(
-			&cr.ID, &cr.CompanyID, &cr.Name, &email, &phone, &extCode, &addr,
-			&clientCode, &branchName, &payTerms,
-			&cr.CreatedAt, &isActive, &cr.FollowupChannel, &cr.TotalOwed, &cr.OverdueCnt, &cr.ChargeCount,
-		); err != nil {
-			return nil, err
-		}
-		cr.Email = assignNullString(email)
-		cr.Phone = assignNullString(phone)
-		cr.ExternalCode = assignNullString(extCode)
-		cr.Address = assignNullString(addr)
-		cr.ClientCode = assignNullString(clientCode)
-		cr.BranchName = assignNullString(branchName)
-		cr.PaymentTerms = assignNullString(payTerms)
-		cr.IsActive = isActive
-		if cr.FollowupChannel == "" {
-			cr.FollowupChannel = "all"
-		}
-		out = append(out, cr)
-	}
-	return out, rows.Err()
-}
 
-func (db *DB) GetClient(ctx context.Context, companyID, clientID int64) (*ClientRow, error) {
-	q := `
-SELECT c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.address,
-       c.client_code, c.branch_name, c.payment_terms,
-       c.created_at,
-       c.is_active,
-       c.followup_channel,
-       COALESCE(SUM(CASE WHEN i.paid_at IS NULL THEN i.amount ELSE 0 END), 0),
-       COALESCE(SUM(CASE WHEN i.paid_at IS NULL AND i.due_date < CURRENT_DATE THEN 1 ELSE 0 END), 0),
-       COUNT(i.id)
-FROM clients c
-LEFT JOIN charges i ON i.client_id = c.id AND i.company_id = c.company_id
-WHERE c.company_id = $1 AND c.id = $2
+const clientGroupBySQL = `
 GROUP BY c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.address,
          c.client_code, c.branch_name, c.payment_terms,
-         c.created_at, c.is_active, c.followup_channel
+         c.created_at, c.is_active, c.followup_channel,
+         c.created_by, c.assigned_to, su.name
 `
+
+func scanClientRow(scan func(dest ...any) error) (ClientRow, error) {
 	var cr ClientRow
 	var isActive bool
 	var email, phone, extCode, addr sql.NullString
-	var clientCode, branchName, payTerms sql.NullString
-	err := db.ex.QueryRowContext(ctx, q, companyID, clientID).Scan(
+	var clientCode, branchName, payTerms, sellerName sql.NullString
+	var createdBy, assignedTo, sellerID sql.NullInt64
+	if err := scan(
 		&cr.ID, &cr.CompanyID, &cr.Name, &email, &phone, &extCode, &addr,
 		&clientCode, &branchName, &payTerms,
-		&cr.CreatedAt, &isActive, &cr.FollowupChannel, &cr.TotalOwed, &cr.OverdueCnt, &cr.ChargeCount,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, sql.ErrNoRows
-		}
-		return nil, err
+		&cr.CreatedAt, &isActive, &cr.FollowupChannel,
+		&createdBy, &assignedTo, &sellerID, &sellerName,
+		&cr.TotalOwed, &cr.OverdueCnt, &cr.ChargeCount,
+	); err != nil {
+		return cr, err
 	}
 	cr.Email = assignNullString(email)
 	cr.Phone = assignNullString(phone)
@@ -169,9 +139,54 @@ GROUP BY c.id, c.company_id, c.name, c.email, c.phone, c.external_code, c.addres
 	cr.ClientCode = assignNullString(clientCode)
 	cr.BranchName = assignNullString(branchName)
 	cr.PaymentTerms = assignNullString(payTerms)
+	cr.CreatedBy = assignNullInt64(createdBy)
+	cr.AssignedTo = assignNullInt64(assignedTo)
+	cr.SellerUserID = assignNullInt64(sellerID)
+	cr.SellerName = assignNullString(sellerName)
 	cr.IsActive = isActive
 	if cr.FollowupChannel == "" {
 		cr.FollowupChannel = "all"
+	}
+	return cr, nil
+}
+
+func (db *DB) ListClients(ctx context.Context, companyID, memberUID int64) ([]ClientRow, error) {
+	q := clientSelectSQL + `
+WHERE c.company_id = $1
+  AND ($2::bigint = 0 OR COALESCE(c.assigned_to, c.created_by) = $2)
+` + clientGroupBySQL + `
+ORDER BY c.created_at DESC, c.id DESC
+`
+	rows, err := db.ex.QueryContext(ctx, q, companyID, memberUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ClientRow
+	for rows.Next() {
+		cr, err := scanClientRow(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cr)
+	}
+	if out == nil {
+		out = []ClientRow{}
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) GetClient(ctx context.Context, companyID, clientID, memberUID int64) (*ClientRow, error) {
+	q := clientSelectSQL + `
+WHERE c.company_id = $1 AND c.id = $2
+  AND ($3::bigint = 0 OR COALESCE(c.assigned_to, c.created_by) = $3)
+` + clientGroupBySQL
+	cr, err := scanClientRow(db.ex.QueryRowContext(ctx, q, companyID, clientID, memberUID).Scan)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
 	}
 	return &cr, nil
 }
@@ -202,7 +217,7 @@ func trimImport(s string, max int) string {
 	return s
 }
 
-func (db *DB) CreateClient(ctx context.Context, companyID int64, name, email, phone, extCode, address, clientCode, branchName, payTerms string) (int64, error) {
+func (db *DB) CreateClient(ctx context.Context, companyID int64, name, email, phone, extCode, address, clientCode, branchName, payTerms string, createdBy int64, assignedTo *int64) (int64, error) {
 	name = trimImport(name, 255)
 	if name == "" {
 		return 0, errors.New("nombre vacío")
@@ -215,18 +230,27 @@ func (db *DB) CreateClient(ctx context.Context, companyID int64, name, email, ph
 	branchName = trimImport(branchName, 255)
 	payTerms = trimImport(payTerms, 64)
 
+	var createdArg any
+	if createdBy > 0 {
+		createdArg = createdBy
+	}
+	var assignedArg any
+	if assignedTo != nil && *assignedTo > 0 {
+		assignedArg = *assignedTo
+	}
+
 	var id int64
 	err := db.ex.QueryRowContext(ctx,
 		`INSERT INTO clients (
 			company_id, name, email, phone, external_code, address,
 			client_code, branch_name, payment_terms,
-			is_active, followup_channel
+			is_active, followup_channel, created_by, assigned_to
 		) VALUES (
 			$1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''),
 			NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''),
-			TRUE, 'all'
+			TRUE, 'all', $10, $11
 		) RETURNING id`,
-		companyID, name, email, phone, extCode, address, clientCode, branchName, payTerms,
+		companyID, name, email, phone, extCode, address, clientCode, branchName, payTerms, createdArg, assignedArg,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -268,19 +292,23 @@ WHERE company_id = $9 AND external_code = $10`,
 	if n > 0 {
 		return false, nil
 	}
+	var createdArg any
+	if in.CreatedBy > 0 {
+		createdArg = in.CreatedBy
+	}
 	_, err = db.ex.ExecContext(ctx, `
 INSERT INTO clients (
   company_id, name, email, phone, external_code, address,
   client_code, branch_name, payment_terms,
-  is_active, followup_channel
+  is_active, followup_channel, created_by
 ) VALUES (
   $1, $2, NULLIF($3, ''), NULLIF($4, ''), $5, NULLIF($6, ''),
   NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''),
-  $10, 'all'
+  $10, 'all', $11
 )`,
 		companyID, name, em, phone, ec, addr,
 		cc, bn, pay,
-		active,
+		active, createdArg,
 	)
 	if err != nil {
 		return false, err
@@ -341,6 +369,15 @@ func (db *DB) PatchClient(ctx context.Context, companyID, clientID int64, p Clie
 		sets = append(sets, fmt.Sprintf("external_code = NULLIF($%d::text, '')", n))
 		args = append(args, trimImport(*p.ExternalCode, 128))
 		n++
+	}
+	if p.AssignedTo != nil {
+		if *p.AssignedTo <= 0 {
+			sets = append(sets, "assigned_to = NULL")
+		} else {
+			sets = append(sets, fmt.Sprintf("assigned_to = $%d", n))
+			args = append(args, *p.AssignedTo)
+			n++
+		}
 	}
 	if len(sets) == 0 {
 		return nil

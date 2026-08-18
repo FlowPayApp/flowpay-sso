@@ -479,6 +479,26 @@ func (h *AuthController) CreateCompanyUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID, "company_id": claims.CompanyID, "role": body.Role})
 }
 
+func (h *AuthController) ListCompanyUsers(c *gin.Context) {
+	claims, ok := h.authorize(c, "admin")
+	if !ok {
+		return
+	}
+	if claims.CompanyID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token sin company_id válido"})
+		return
+	}
+	list, err := h.Repo.ListCompanyUsers(c.Request.Context(), claims.CompanyID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if list == nil {
+		list = []repository.CompanyUser{}
+	}
+	c.JSON(http.StatusOK, list)
+}
+
 func (h *AuthController) BootstrapPlatformAdmin(c *gin.Context) {
 	total, err := h.Repo.CountPlatformAdmins(c.Request.Context())
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/flowpay/flowpay-sso/internal/service"
 	"github.com/gin-gonic/gin"
@@ -37,8 +38,39 @@ func jwtUserID(c *gin.Context) *int64 {
 	return nil
 }
 
+func jwtUserIDValue(c *gin.Context) int64 {
+	if id := jwtUserID(c); id != nil {
+		return *id
+	}
+	return 0
+}
+
+func jwtRole(c *gin.Context) string {
+	if v, ok := c.Get("role"); ok {
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(strings.ToLower(s))
+		}
+	}
+	return ""
+}
+
+func memberUIDFromJWT(c *gin.Context) int64 {
+	if jwtRole(c) == "member" {
+		return jwtUserIDValue(c)
+	}
+	return 0
+}
+
+func requireCompanyAdmin(c *gin.Context) bool {
+	if jwtRole(c) == "admin" {
+		return true
+	}
+	c.JSON(http.StatusForbidden, gin.H{"error": "solo el administrador de la empresa puede hacer esta acción"})
+	return false
+}
+
 func (h *ClientsController) ListClients(c *gin.Context) {
-	list, err := h.Svc.ListClients(c.Request.Context(), companyIDFromJWT(c))
+	list, err := h.Svc.ListClients(c.Request.Context(), companyIDFromJWT(c), memberUIDFromJWT(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -54,6 +86,7 @@ type createClientBody struct {
 	ClientCode   string `json:"client_code"`
 	BranchName   string `json:"branch_name"`
 	PaymentTerms string `json:"payment_terms"`
+	AssignedTo   *int64 `json:"assigned_to"`
 }
 
 type patchClientBody struct {
@@ -66,12 +99,14 @@ type patchClientBody struct {
 	ClientCode      *string `json:"client_code"`
 	BranchName      *string `json:"branch_name"`
 	PaymentTerms    *string `json:"payment_terms"`
+	AssignedTo      *int64  `json:"assigned_to"`
 }
 
 func (b patchClientBody) hasPatchFields() bool {
 	return b.IsActive != nil || b.FollowupChannel != nil ||
 		b.Name != nil || b.Email != nil || b.Phone != nil || b.Address != nil ||
-		b.ClientCode != nil || b.BranchName != nil || b.PaymentTerms != nil
+		b.ClientCode != nil || b.BranchName != nil || b.PaymentTerms != nil ||
+		b.AssignedTo != nil
 }
 
 func (h *ClientsController) CreateClient(c *gin.Context) {
@@ -80,6 +115,7 @@ func (h *ClientsController) CreateClient(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
 		return
 	}
+	role := jwtRole(c)
 	id, err := h.Svc.CreateClient(c.Request.Context(), companyIDFromJWT(c), service.CreateClientInput{
 		Name:         body.Name,
 		Email:        body.Email,
@@ -88,6 +124,9 @@ func (h *ClientsController) CreateClient(c *gin.Context) {
 		ClientCode:   body.ClientCode,
 		BranchName:   body.BranchName,
 		PaymentTerms: body.PaymentTerms,
+		CreatedBy:    jwtUserIDValue(c),
+		AssignedTo:   body.AssignedTo,
+		IsMember:     role == "member",
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -111,6 +150,7 @@ func (h *ClientsController) PatchClient(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "indica al menos un campo para actualizar"})
 		return
 	}
+	role := jwtRole(c)
 	if err := h.Svc.PatchClient(c.Request.Context(), companyIDFromJWT(c), id, service.PatchClientInput{
 		IsActive:        body.IsActive,
 		FollowupChannel: body.FollowupChannel,
@@ -121,7 +161,14 @@ func (h *ClientsController) PatchClient(c *gin.Context) {
 		ClientCode:      body.ClientCode,
 		BranchName:      body.BranchName,
 		PaymentTerms:    body.PaymentTerms,
+		AssignedTo:      body.AssignedTo,
+		IsMember:        role == "member",
+		MemberUID:       memberUIDFromJWT(c),
 	}); err != nil {
+		if errors.Is(err, service.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "el vendedor no puede cambiar estados ni la asignación"})
+			return
+		}
 		if service.ErrNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
@@ -138,7 +185,7 @@ func (h *ClientsController) GetClient(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
-	dto, err := h.Svc.GetClient(c.Request.Context(), companyIDFromJWT(c), id)
+	dto, err := h.Svc.GetClient(c.Request.Context(), companyIDFromJWT(c), id, memberUIDFromJWT(c))
 	if err != nil {
 		if service.ErrNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
@@ -151,6 +198,9 @@ func (h *ClientsController) GetClient(c *gin.Context) {
 }
 
 func (h *ClientsController) DeleteClient(c *gin.Context) {
+	if !requireCompanyAdmin(c) {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
@@ -173,6 +223,9 @@ type importDistributorRowsBody struct {
 }
 
 func (h *ClientsController) ImportDistributorRows(c *gin.Context) {
+	if !requireCompanyAdmin(c) {
+		return
+	}
 	var body importDistributorRowsBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "JSON inválido: se espera { \"rows\": [[...]] }"})
@@ -182,7 +235,7 @@ func (h *ClientsController) ImportDistributorRows(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rows vacío"})
 		return
 	}
-	res, err := h.Svc.ImportClientsDistributorRows(c.Request.Context(), companyIDFromJWT(c), body.Rows)
+	res, err := h.Svc.ImportClientsDistributorRows(c.Request.Context(), companyIDFromJWT(c), jwtUserIDValue(c), body.Rows)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -198,6 +251,9 @@ func (h *ClientsController) ImportDistributorRows(c *gin.Context) {
 }
 
 func (h *ClientsController) ListImportBatches(c *gin.Context) {
+	if !requireCompanyAdmin(c) {
+		return
+	}
 	list, err := h.Svc.ListClientImportBatches(c.Request.Context(), companyIDFromJWT(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -207,6 +263,9 @@ func (h *ClientsController) ListImportBatches(c *gin.Context) {
 }
 
 func (h *ClientsController) GetImportBatch(c *gin.Context) {
+	if !requireCompanyAdmin(c) {
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido"})

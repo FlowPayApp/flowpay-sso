@@ -20,6 +20,7 @@ func Register(r *gin.Engine, auth *controller.AuthController, clients *controlle
 	r.POST("/auth/password/first-change", auth.FirstPasswordChange)
 	r.POST("/auth/bootstrap/platform-admin", auth.BootstrapPlatformAdmin)
 	r.POST("/auth/company/users", auth.CreateCompanyUser)
+	r.GET("/auth/company/users", auth.ListCompanyUsers)
 	r.GET("/auth/platform/companies", auth.ListCompanies)
 	r.POST("/auth/platform/companies", auth.CreateCompany)
 	r.POST("/auth/platform/companies-with-admin", auth.CreateCompanyWithAdmin)
