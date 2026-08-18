@@ -31,8 +31,10 @@ func ErrNotFound(err error) bool {
 	return errors.Is(err, sql.ErrNoRows)
 }
 
-func (s *ClientsService) ListClients(ctx context.Context, companyID int64) ([]ClientDTO, error) {
-	rows, err := s.Repo.ListClients(ctx, companyID)
+var ErrForbidden = errors.New("sin permisos")
+
+func (s *ClientsService) ListClients(ctx context.Context, companyID, memberUID int64) ([]ClientDTO, error) {
+	rows, err := s.Repo.ListClients(ctx, companyID, memberUID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +52,8 @@ func (s *ClientsService) ListClients(ctx context.Context, companyID int64) ([]Cl
 	return out, nil
 }
 
-func (s *ClientsService) GetClient(ctx context.Context, companyID, clientID int64) (*ClientDTO, error) {
-	row, err := s.Repo.GetClient(ctx, companyID, clientID)
+func (s *ClientsService) GetClient(ctx context.Context, companyID, clientID, memberUID int64) (*ClientDTO, error) {
+	row, err := s.Repo.GetClient(ctx, companyID, clientID, memberUID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,12 +79,28 @@ type CreateClientInput struct {
 	ClientCode   string
 	BranchName   string
 	PaymentTerms string
+	CreatedBy    int64
+	AssignedTo   *int64
+	IsMember     bool
 }
 
 func (s *ClientsService) CreateClient(ctx context.Context, companyID int64, in CreateClientInput) (int64, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return 0, errors.New("el nombre del encargado (NOMBRE) es obligatorio")
+	}
+	assignedTo := in.AssignedTo
+	if in.IsMember {
+		uid := in.CreatedBy
+		assignedTo = &uid
+	} else if assignedTo != nil && *assignedTo > 0 {
+		ok, err := s.Repo.CompanyHasMember(ctx, companyID, *assignedTo)
+		if err != nil {
+			return 0, err
+		}
+		if !ok {
+			return 0, errors.New("el vendedor asignado debe ser un member de la empresa")
+		}
 	}
 	ext := buildExternalCode(in.BranchName, in.ClientCode)
 	id, err := s.Repo.CreateClient(ctx, companyID,
@@ -94,6 +112,8 @@ func (s *ClientsService) CreateClient(ctx context.Context, companyID int64, in C
 		strings.TrimSpace(in.ClientCode),
 		strings.TrimSpace(in.BranchName),
 		strings.TrimSpace(in.PaymentTerms),
+		in.CreatedBy,
+		assignedTo,
 	)
 	if err != nil {
 		if dberrors.IsUniqueViolation(err) {
@@ -123,9 +143,18 @@ type PatchClientInput struct {
 	ClientCode      *string
 	BranchName      *string
 	PaymentTerms    *string
+	AssignedTo      *int64
+	IsMember        bool
+	MemberUID       int64
 }
 
 func (s *ClientsService) PatchClient(ctx context.Context, companyID, clientID int64, in PatchClientInput) error {
+	if _, err := s.Repo.GetClient(ctx, companyID, clientID, in.MemberUID); err != nil {
+		return err
+	}
+	if in.IsMember && (in.IsActive != nil || in.FollowupChannel != nil || in.AssignedTo != nil) {
+		return ErrForbidden
+	}
 	var follow *string
 	if in.FollowupChannel != nil {
 		v := strings.TrimSpace(strings.ToLower(*in.FollowupChannel))
@@ -134,9 +163,19 @@ func (s *ClientsService) PatchClient(ctx context.Context, companyID, clientID in
 		}
 		follow = &v
 	}
+	if in.AssignedTo != nil && *in.AssignedTo > 0 {
+		ok, err := s.Repo.CompanyHasMember(ctx, companyID, *in.AssignedTo)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("el vendedor asignado debe ser un member de la empresa")
+		}
+	}
 	patch := repository.ClientPatch{
 		IsActive:        in.IsActive,
 		FollowupChannel: follow,
+		AssignedTo:      in.AssignedTo,
 	}
 	profile := in.Name != nil || in.Email != nil || in.Phone != nil || in.Address != nil ||
 		in.ClientCode != nil || in.BranchName != nil || in.PaymentTerms != nil
@@ -199,7 +238,7 @@ var distributorHeaderSet = func() map[string]struct{} {
 
 const maxImportDataRows = 10000
 
-func (s *ClientsService) ImportClientsDistributorRows(ctx context.Context, companyID int64, rows [][]string) (*ImportDistributorResult, error) {
+func (s *ClientsService) ImportClientsDistributorRows(ctx context.Context, companyID, createdBy int64, rows [][]string) (*ImportDistributorResult, error) {
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("sin filas")
 	}
@@ -253,6 +292,7 @@ func (s *ClientsService) ImportClientsDistributorRows(ctx context.Context, compa
 			ClientCode:   codigo,
 			BranchName:   sucursal,
 			PaymentTerms: mpago,
+			CreatedBy:    createdBy,
 		})
 		if err != nil {
 			if len(out.Errors) < maxErrors {

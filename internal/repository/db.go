@@ -42,6 +42,14 @@ type CompanyAdmin struct {
 	IsActive    bool   `json:"is_active"`
 }
 
+type CompanyUser struct {
+	UserID   int64  `json:"user_id"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	IsActive bool   `json:"is_active"`
+}
+
 type DB struct {
 	ex  execer
 	raw *sql.DB // solo en repo raíz; permite BeginTx
@@ -367,6 +375,48 @@ func (db *DB) SetCompanyAdminActive(ctx context.Context, userID int64, active bo
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (db *DB) ListCompanyUsers(ctx context.Context, companyID int64) ([]CompanyUser, error) {
+	q := `
+SELECT u.id, u.email, u.name, cu.role, u.is_active
+FROM company_users cu
+JOIN users u ON u.id = cu.user_id
+WHERE cu.company_id = $1 AND u.is_platform_admin = FALSE
+ORDER BY CASE cu.role WHEN 'admin' THEN 0 ELSE 1 END, u.name ASC, u.id ASC
+`
+	rows, err := db.ex.QueryContext(ctx, q, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CompanyUser
+	for rows.Next() {
+		var u CompanyUser
+		if err := rows.Scan(&u.UserID, &u.Email, &u.Name, &u.Role, &u.IsActive); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) CompanyHasMember(ctx context.Context, companyID, userID int64) (bool, error) {
+	var one int
+	err := db.ex.QueryRowContext(ctx, `
+SELECT 1 FROM company_users cu
+JOIN users u ON u.id = cu.user_id
+WHERE cu.company_id = $1 AND cu.user_id = $2 AND cu.role = 'member' AND u.is_platform_admin = FALSE
+LIMIT 1`,
+		companyID, userID,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 var ErrEmailTaken = errors.New("email ya registrado")

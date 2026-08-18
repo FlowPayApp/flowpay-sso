@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -35,6 +36,9 @@ func main() {
 	}
 
 	repo := repository.New(db)
+	if err := repo.EnsureClientPortfolioColumns(context.Background()); err != nil {
+		log.Printf("warn: columnas de cartera de clientes: %v", err)
+	}
 	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL)
 	clientSvc := service.NewClientsService(repo)
 	clients := controller.NewClientsController(clientSvc)
