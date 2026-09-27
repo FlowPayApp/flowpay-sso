@@ -345,7 +345,7 @@ func validateDistributorHeader(header []string) (map[string]int, error) {
 		return nil, fmt.Errorf("falta la columna MPAGO (método de pago); en archivos antiguos puede llamarse CPAGO")
 	}
 	if hasMP && hasCP {
-		return nil, fmt.Errorf("no puede haber columnas MPAGO y CPAGO a la vez; dejá solo MPAGO")
+		return nil, fmt.Errorf("no puede haber columnas MPAGO y CPAGO a la vez; deja solo MPAGO")
 	}
 	return idx, nil
 }

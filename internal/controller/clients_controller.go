@@ -275,7 +275,7 @@ func (h *ClientsController) GetImportBatch(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, service.ErrImportHistoryUnavailable) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"error": "Falta la tabla de historial (client_import_batches). Ejecutá el DDL en PostgreSQL (postgresql_migration/02_schema.sql) y reiniciá el API.",
+				"error": "Falta la tabla de historial (client_import_batches). Ejecuta el DDL en PostgreSQL (postgresql_migration/02_schema.sql) y reinicia el API.",
 			})
 			return
 		}
