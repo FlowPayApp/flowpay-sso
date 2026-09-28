@@ -59,6 +59,13 @@ type createCompanyUserBody struct {
 	Role     string `json:"role"`
 }
 
+type updateCompanyUserBody struct {
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	IsActive *bool  `json:"is_active"`
+}
+
 type createCompanyAdminBody struct {
 	CompanyID int64  `json:"company_id"`
 	Email     string `json:"email"`
@@ -497,6 +504,92 @@ func (h *AuthController) ListCompanyUsers(c *gin.Context) {
 		list = []repository.CompanyUser{}
 	}
 	c.JSON(http.StatusOK, list)
+}
+
+func (h *AuthController) UpdateCompanyUser(c *gin.Context) {
+	claims, ok := h.authorize(c, "admin")
+	if !ok {
+		return
+	}
+	if claims.CompanyID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token sin company_id válido"})
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id inválido"})
+		return
+	}
+	var body updateCompanyUserBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "json inválido"})
+		return
+	}
+	body.Email = strings.TrimSpace(strings.ToLower(body.Email))
+	body.Name = strings.TrimSpace(body.Name)
+	body.Role = strings.TrimSpace(strings.ToLower(body.Role))
+	if body.Email == "" || body.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email y name son obligatorios"})
+		return
+	}
+	if body.Role != "admin" && body.Role != "member" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role debe ser admin o member"})
+		return
+	}
+	active := true
+	if body.IsActive != nil {
+		active = *body.IsActive
+	}
+	if userID == claims.UserID && (body.Role != "admin" || !active) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no puedes cambiar tu propio rol ni desactivarte"})
+		return
+	}
+	if err := h.Repo.UpdateCompanyMember(c.Request.Context(), claims.CompanyID, userID, body.Email, body.Name, body.Role, active); err != nil {
+		writeCompanyMemberError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *AuthController) DeleteCompanyUser(c *gin.Context) {
+	claims, ok := h.authorize(c, "admin")
+	if !ok {
+		return
+	}
+	if claims.CompanyID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token sin company_id válido"})
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id inválido"})
+		return
+	}
+	if userID == claims.UserID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no puedes eliminarte a ti mismo"})
+		return
+	}
+	if err := h.Repo.RemoveCompanyMember(c.Request.Context(), claims.CompanyID, userID, claims.UserID); err != nil {
+		writeCompanyMemberError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func writeCompanyMemberError(c *gin.Context, err error) {
+	if errors.Is(err, repository.ErrCompanyUserNotFound) || errors.Is(err, sql.ErrNoRows) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "usuario no encontrado en el equipo"})
+		return
+	}
+	if errors.Is(err, repository.ErrLastCompanyAdmin) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "23505") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+		c.JSON(http.StatusConflict, gin.H{"error": "email ya registrado"})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 }
 
 func (h *AuthController) BootstrapPlatformAdmin(c *gin.Context) {

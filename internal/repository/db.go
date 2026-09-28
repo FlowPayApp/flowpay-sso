@@ -420,3 +420,148 @@ LIMIT 1`,
 }
 
 var ErrEmailTaken = errors.New("email ya registrado")
+var ErrCompanyUserNotFound = errors.New("usuario no encontrado en el equipo")
+var ErrLastCompanyAdmin = errors.New("la empresa debe conservar al menos un administrador activo")
+
+func (db *DB) countOtherActiveAdmins(ctx context.Context, companyID, exceptUserID int64) (int, error) {
+	var n int
+	err := db.ex.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM company_users cu
+JOIN users u ON u.id = cu.user_id
+WHERE cu.company_id = $1 AND cu.user_id <> $2 AND cu.role = 'admin'
+  AND u.is_active = TRUE AND u.is_platform_admin = FALSE`,
+		companyID, exceptUserID,
+	).Scan(&n)
+	return n, err
+}
+
+func (db *DB) companyMemberRole(ctx context.Context, companyID, userID int64) (string, error) {
+	var role string
+	err := db.ex.QueryRowContext(ctx, `
+SELECT cu.role
+FROM company_users cu
+JOIN users u ON u.id = cu.user_id
+WHERE cu.company_id = $1 AND cu.user_id = $2 AND u.is_platform_admin = FALSE
+LIMIT 1`,
+		companyID, userID,
+	).Scan(&role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrCompanyUserNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+func (db *DB) UpdateCompanyMember(ctx context.Context, companyID, userID int64, email, name, role string, active bool) error {
+	currentRole, err := db.companyMemberRole(ctx, companyID, userID)
+	if err != nil {
+		return err
+	}
+	if currentRole == "admin" && (role != "admin" || !active) {
+		others, err := db.countOtherActiveAdmins(ctx, companyID, userID)
+		if err != nil {
+			return err
+		}
+		if others == 0 {
+			return ErrLastCompanyAdmin
+		}
+	}
+
+	tx, rw, err := db.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := rw.ex.ExecContext(ctx,
+		`UPDATE users SET email = $1, name = $2, is_active = $3 WHERE id = $4 AND is_platform_admin = FALSE`,
+		strings.TrimSpace(strings.ToLower(email)), strings.TrimSpace(name), active, userID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrCompanyUserNotFound
+	}
+	res, err = rw.ex.ExecContext(ctx,
+		`UPDATE company_users SET role = $1 WHERE company_id = $2 AND user_id = $3`,
+		role, companyID, userID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err = res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrCompanyUserNotFound
+	}
+	return tx.Commit()
+}
+
+// RemoveCompanyMember saca al usuario del equipo. Los clientes que tenía pasan al admin que lo elimina.
+func (db *DB) RemoveCompanyMember(ctx context.Context, companyID, userID, reassignTo int64) error {
+	currentRole, err := db.companyMemberRole(ctx, companyID, userID)
+	if err != nil {
+		return err
+	}
+	if currentRole == "admin" {
+		others, err := db.countOtherActiveAdmins(ctx, companyID, userID)
+		if err != nil {
+			return err
+		}
+		if others == 0 {
+			return ErrLastCompanyAdmin
+		}
+	}
+
+	tx, rw, err := db.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := rw.ex.ExecContext(ctx,
+		`UPDATE clients SET assigned_to = NULL WHERE company_id = $1 AND assigned_to = $2`,
+		companyID, userID,
+	); err != nil {
+		return err
+	}
+	if reassignTo > 0 && reassignTo != userID {
+		if _, err := rw.ex.ExecContext(ctx,
+			`UPDATE clients SET created_by = $3 WHERE company_id = $1 AND created_by = $2`,
+			companyID, userID, reassignTo,
+		); err != nil {
+			return err
+		}
+	}
+	res, err := rw.ex.ExecContext(ctx,
+		`DELETE FROM company_users WHERE company_id = $1 AND user_id = $2`,
+		companyID, userID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrCompanyUserNotFound
+	}
+	if _, err := rw.ex.ExecContext(ctx,
+		`UPDATE users SET is_active = FALSE WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM company_users WHERE user_id = $1)`,
+		userID,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
