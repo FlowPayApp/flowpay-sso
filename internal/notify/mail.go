@@ -45,7 +45,7 @@ func (s SMTP) SendSignup(to []string, n SignupNotice) error {
 		port = "587"
 	}
 	body := strings.Join([]string{
-		"Alguien pidió crear una cuenta en FlowPay. La empresa queda pendiente hasta que la actives.",
+		"Alguien pidió crear una cuenta en GeldFlus. La empresa queda pendiente hasta que la actives.",
 		"",
 		"Empresa: " + n.CompanyName,
 		"Nombre: " + n.PersonName,
