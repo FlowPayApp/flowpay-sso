@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -22,10 +23,7 @@ type Config struct {
 
 func Load() Config {
 	_ = godotenv.Load()
-	addr := os.Getenv("FLOWPAY_SSO_ADDR")
-	if addr == "" {
-		addr = ":9090"
-	}
+	addr := listenAddr("FLOWPAY_SSO_ADDR", ":9090")
 	dsn := os.Getenv("FLOWPAY_SSO_DSN")
 	if dsn == "" {
 		dsn = os.Getenv("FLOWPAY_DSN")
@@ -52,4 +50,17 @@ func Load() Config {
 		SMTPFrom:          os.Getenv("FLOWPAY_SMTP_FROM"),
 		SignupNotifyEmail: os.Getenv("FLOWPAY_SIGNUP_NOTIFY_EMAIL"),
 	}
+}
+
+func listenAddr(primaryKey, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(primaryKey)); v != "" {
+		return v
+	}
+	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
+		if strings.HasPrefix(p, ":") {
+			return p
+		}
+		return ":" + p
+	}
+	return fallback
 }
