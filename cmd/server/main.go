@@ -15,6 +15,7 @@ import (
 
 	"github.com/flowpay/flowpay-sso/internal/config"
 	"github.com/flowpay/flowpay-sso/internal/controller"
+	"github.com/flowpay/flowpay-sso/internal/notify"
 	"github.com/flowpay/flowpay-sso/internal/repository"
 	"github.com/flowpay/flowpay-sso/internal/routes"
 	"github.com/flowpay/flowpay-sso/internal/service"
@@ -39,7 +40,18 @@ func main() {
 	if err := repo.EnsureClientPortfolioColumns(context.Background()); err != nil {
 		log.Printf("warn: columnas de cartera de clientes: %v", err)
 	}
+	if err := repo.EnsureSignupColumns(context.Background()); err != nil {
+		log.Printf("warn: columnas de solicitud de cuenta: %v", err)
+	}
 	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL)
+	auth.SignupSMTP = notify.SMTP{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUser,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+	}
+	auth.SignupNotifyEmail = cfg.SignupNotifyEmail
 	clientSvc := service.NewClientsService(repo)
 	clients := controller.NewClientsController(clientSvc)
 

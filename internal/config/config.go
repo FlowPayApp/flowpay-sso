@@ -8,10 +8,16 @@ import (
 )
 
 type Config struct {
-	Addr      string
-	DSN       string
-	JWTSecret string
-	JWTTTL    time.Duration
+	Addr              string
+	DSN               string
+	JWTSecret         string
+	JWTTTL            time.Duration
+	SMTPHost          string
+	SMTPPort          string
+	SMTPUser          string
+	SMTPPassword      string
+	SMTPFrom          string
+	SignupNotifyEmail string
 }
 
 func Load() Config {
@@ -34,5 +40,16 @@ func Load() Config {
 			ttl = d
 		}
 	}
-	return Config{Addr: addr, DSN: dsn, JWTSecret: secret, JWTTTL: ttl}
+	return Config{
+		Addr:              addr,
+		DSN:               dsn,
+		JWTSecret:         secret,
+		JWTTTL:            ttl,
+		SMTPHost:          os.Getenv("FLOWPAY_SMTP_HOST"),
+		SMTPPort:          os.Getenv("FLOWPAY_SMTP_PORT"),
+		SMTPUser:          os.Getenv("FLOWPAY_SMTP_USER"),
+		SMTPPassword:      os.Getenv("FLOWPAY_SMTP_PASSWORD"),
+		SMTPFrom:          os.Getenv("FLOWPAY_SMTP_FROM"),
+		SignupNotifyEmail: os.Getenv("FLOWPAY_SIGNUP_NOTIFY_EMAIL"),
+	}
 }
