@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/gin-contrib/cors"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/flowpay/flowpay-sso/internal/config"
 	"github.com/flowpay/flowpay-sso/internal/controller"
+	"github.com/flowpay/flowpay-sso/internal/notify"
 	"github.com/flowpay/flowpay-sso/internal/repository"
 	"github.com/flowpay/flowpay-sso/internal/routes"
 	"github.com/flowpay/flowpay-sso/internal/service"
@@ -39,16 +41,31 @@ func main() {
 	if err := repo.EnsureClientPortfolioColumns(context.Background()); err != nil {
 		log.Printf("warn: columnas de cartera de clientes: %v", err)
 	}
+	if err := repo.EnsureSignupColumns(context.Background()); err != nil {
+		log.Printf("warn: columnas de solicitud de cuenta: %v", err)
+	}
 	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL)
+	auth.SignupSMTP = notify.SMTP{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUser,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+	}
+	auth.SignupNotifyEmail = cfg.SignupNotifyEmail
 	clientSvc := service.NewClientsService(repo)
 	clients := controller.NewClientsController(clientSvc)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	})
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://127.0.0.1:5173"},
-		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowOriginFunc:  allowBrowserOrigin,
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
 		MaxAge:           12 * 3600,
@@ -109,6 +126,31 @@ func printStartupStatus(db *sql.DB, addr, dsn, jwtSecret string) {
 		log.Printf(cyan+"║"+reset+" %s", warn("Faltan tablas: "+strings.Join(miss, ", ")))
 	}
 	log.Println(cyan + "╚══════════════════════════════════════════════════════╝" + reset)
+}
+
+func allowBrowserOrigin(origin string) bool {
+	switch origin {
+	case "https://geldflus.com", "https://www.geldflus.com":
+		return true
+	}
+	if isLocalDevOrigin(origin) {
+		return true
+	}
+	for _, extra := range strings.Split(os.Getenv("FLOWPAY_CORS_ORIGINS"), ",") {
+		if strings.TrimSpace(extra) == origin && origin != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func isLocalDevOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1"
 }
 
 func safeDSN(raw string) string {

@@ -25,11 +25,18 @@ type User struct {
 }
 
 type Company struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	IsActive    bool   `json:"is_active"`
-	ClientCount int64  `json:"client_count"`
-	AdminCount  int64  `json:"admin_count"`
+	ID                        int64    `json:"id"`
+	Name                      string   `json:"name"`
+	IsActive                  bool     `json:"is_active"`
+	ClientCount               int64    `json:"client_count"`
+	AdminCount                int64    `json:"admin_count"`
+	ContactPhone              string   `json:"contact_phone"`
+	RequestedPlan             string   `json:"requested_plan"`
+	ContactName               string   `json:"contact_name"`
+	ContactEmail              string   `json:"contact_email"`
+	Approved                  bool     `json:"approved"`
+	PriceCLPOverride          *int     `json:"price_clp_override"`
+	CommissionPercentOverride *float64 `json:"commission_percent_override"`
 }
 
 type CompanyAdmin struct {
@@ -168,10 +175,19 @@ func (db *DB) UpdateOwnProfile(ctx context.Context, userID int64, email, name st
 }
 
 func (db *DB) CreateCompany(ctx context.Context, name string) (int64, error) {
+	return db.insertCompany(ctx, name, true, "", "")
+}
+
+// CreatePendingCompany deja la empresa inactiva hasta que un platform_admin la active.
+func (db *DB) CreatePendingCompany(ctx context.Context, name, phone, plan string) (int64, error) {
+	return db.insertCompany(ctx, name, false, phone, plan)
+}
+
+func (db *DB) insertCompany(ctx context.Context, name string, active bool, phone, plan string) (int64, error) {
 	var id int64
 	err := db.ex.QueryRowContext(ctx,
-		`INSERT INTO companies (name) VALUES ($1) RETURNING id`,
-		strings.TrimSpace(name),
+		`INSERT INTO companies (name, is_active, contact_phone, requested_plan) VALUES ($1, $2, $3, $4) RETURNING id`,
+		strings.TrimSpace(name), active, strings.TrimSpace(phone), strings.TrimSpace(plan),
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -208,6 +224,61 @@ ORDER BY cu.company_id ASC LIMIT 1`,
 	return cid, role, nil
 }
 
+// CompanyLoginForUser distingue empresa activa, solicitud pendiente y empresa ya aprobada pero apagada.
+// status: "active", "pending" o "inactive".
+func (db *DB) CompanyLoginForUser(ctx context.Context, userID int64) (companyID int64, role string, status string, err error) {
+	companyID, role, err = db.FirstCompanyIDForUser(ctx, userID)
+	if err == nil {
+		return companyID, role, "active", nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, "", "", err
+	}
+	var inactiveID int64
+	var approved bool
+	var plan string
+	err = db.ex.QueryRowContext(ctx, `
+SELECT c.id, (c.approved_at IS NOT NULL), COALESCE(c.requested_plan, '')
+FROM company_users cu
+JOIN companies c ON c.id = cu.company_id
+WHERE cu.user_id = $1 AND c.is_active = FALSE
+ORDER BY c.id ASC
+LIMIT 1
+`, userID).Scan(&inactiveID, &approved, &plan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", "", sql.ErrNoRows
+	}
+	if err != nil {
+		return 0, "", "", err
+	}
+	if !approved && plan != "" {
+		return 0, "", "pending", nil
+	}
+	return 0, "", "inactive", nil
+}
+
+// ListPlatformAdminEmails correos de los super admin activos.
+func (db *DB) ListPlatformAdminEmails(ctx context.Context) ([]string, error) {
+	rows, err := db.ex.QueryContext(ctx, `
+SELECT email FROM users
+WHERE is_platform_admin = TRUE AND is_active = TRUE AND email <> ''
+ORDER BY id ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		out = append(out, email)
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) CountPlatformAdmins(ctx context.Context) (int64, error) {
 	var total int64
 	err := db.ex.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE is_platform_admin = TRUE`).Scan(&total)
@@ -221,7 +292,14 @@ func (db *DB) ListCompanies(ctx context.Context) ([]Company, error) {
 	rows, err := db.ex.QueryContext(ctx, `
 SELECT c.id, c.name, c.is_active,
        COALESCE(cc.client_count, 0) AS client_count,
-       COALESCE(ac.admin_count, 0) AS admin_count
+       COALESCE(ac.admin_count, 0) AS admin_count,
+       COALESCE(c.contact_phone, '') AS contact_phone,
+       COALESCE(c.requested_plan, '') AS requested_plan,
+       COALESCE(adm.name, '') AS contact_name,
+       COALESCE(adm.email, '') AS contact_email,
+       (c.approved_at IS NOT NULL) AS approved,
+       c.price_clp_override,
+       c.commission_percent_override
 FROM companies c
 LEFT JOIN (
 	SELECT company_id, COUNT(1) AS client_count
@@ -235,6 +313,14 @@ LEFT JOIN (
 	WHERE cu.role = 'admin' AND u.is_platform_admin = FALSE
 	GROUP BY cu.company_id
 ) ac ON ac.company_id = c.id
+LEFT JOIN LATERAL (
+	SELECT u.name, u.email
+	FROM company_users cu
+	JOIN users u ON u.id = cu.user_id
+	WHERE cu.company_id = c.id AND cu.role = 'admin' AND u.is_platform_admin = FALSE
+	ORDER BY u.id ASC
+	LIMIT 1
+) adm ON TRUE
 ORDER BY c.id ASC
 `)
 	if err != nil {
@@ -244,12 +330,82 @@ ORDER BY c.id ASC
 	var out []Company
 	for rows.Next() {
 		var c Company
-		if err := rows.Scan(&c.ID, &c.Name, &c.IsActive, &c.ClientCount, &c.AdminCount); err != nil {
+		var price sql.NullInt64
+		var commission sql.NullFloat64
+		if err := rows.Scan(&c.ID, &c.Name, &c.IsActive, &c.ClientCount, &c.AdminCount, &c.ContactPhone, &c.RequestedPlan, &c.ContactName, &c.ContactEmail, &c.Approved, &price, &commission); err != nil {
 			return nil, err
+		}
+		if price.Valid {
+			v := int(price.Int64)
+			c.PriceCLPOverride = &v
+		}
+		if commission.Valid {
+			v := commission.Float64
+			c.CommissionPercentOverride = &v
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// SignupAdmin es el primer administrador de una solicitud pública.
+type SignupAdmin struct {
+	UserID     int64
+	Email      string
+	MustChange bool
+	Plan       string
+	Active     bool
+	Approved   bool
+}
+
+func (db *DB) SignupAdminForCompany(ctx context.Context, companyID int64) (SignupAdmin, error) {
+	var admin SignupAdmin
+	err := db.ex.QueryRowContext(ctx, `
+SELECT c.is_active, COALESCE(c.requested_plan, ''),
+       COALESCE(u.id, 0), COALESCE(u.email, ''), COALESCE(u.must_change_password, FALSE),
+       (c.approved_at IS NOT NULL)
+FROM companies c
+LEFT JOIN LATERAL (
+	SELECT u.id, u.email, u.must_change_password
+	FROM company_users cu
+	JOIN users u ON u.id = cu.user_id
+	WHERE cu.company_id = c.id AND cu.role = 'admin' AND u.is_platform_admin = FALSE
+	ORDER BY u.id ASC
+	LIMIT 1
+) u ON TRUE
+WHERE c.id = $1
+`, companyID).Scan(&admin.Active, &admin.Plan, &admin.UserID, &admin.Email, &admin.MustChange, &admin.Approved)
+	return admin, err
+}
+
+func (db *DB) MarkCompanyApproved(ctx context.Context, companyID int64) error {
+	_, err := db.ex.ExecContext(ctx, `UPDATE companies SET approved_at = NOW() WHERE id = $1 AND approved_at IS NULL`, companyID)
+	return err
+}
+
+// SetCompanyUsersActive prende o apaga a las personas de la empresa. No toca super admins
+// ni a quien siga en otra empresa activa.
+func (db *DB) SetCompanyUsersActive(ctx context.Context, companyID int64, active bool) error {
+	_, err := db.ex.ExecContext(ctx, `
+UPDATE users u
+SET is_active = $2
+FROM company_users cu
+WHERE cu.user_id = u.id
+  AND cu.company_id = $1
+  AND u.is_platform_admin = FALSE
+  AND (
+    $2 = TRUE
+    OR NOT EXISTS (
+      SELECT 1
+      FROM company_users cu2
+      JOIN companies c2 ON c2.id = cu2.company_id
+      WHERE cu2.user_id = u.id
+        AND cu2.company_id <> $1
+        AND c2.is_active = TRUE
+    )
+  )
+`, companyID, active)
+	return err
 }
 
 // PatchCompany actualiza nombre y/o estado. Al menos uno debe ser no nil.
@@ -503,6 +659,119 @@ func (db *DB) UpdateCompanyMember(ctx context.Context, companyID, userID int64, 
 	}
 	if n == 0 {
 		return ErrCompanyUserNotFound
+	}
+	return tx.Commit()
+}
+
+func missingRelation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "42p01") || strings.Contains(msg, "does not exist")
+}
+
+// DeleteCompany borra la empresa, sus datos y las cuentas que solo pertenecían a ella.
+func (db *DB) DeleteCompany(ctx context.Context, companyID int64) error {
+	tx, rw, err := db.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := rw.ex.QueryContext(ctx, `
+SELECT cu.user_id
+FROM company_users cu
+JOIN users u ON u.id = cu.user_id
+WHERE cu.company_id = $1 AND u.is_platform_admin = FALSE
+`, companyID)
+	if err != nil {
+		return err
+	}
+	var userIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		userIDs = append(userIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, q := range []string{
+		`DELETE FROM reminder_messages WHERE company_id = $1`,
+		`DELETE FROM messages WHERE company_id = $1`,
+		`DELETE FROM company_mailboxes WHERE company_id = $1`,
+	} {
+		if _, err := rw.ex.ExecContext(ctx, q, companyID); err != nil && !missingRelation(err) {
+			return err
+		}
+	}
+	res, err := rw.ex.ExecContext(ctx, `DELETE FROM companies WHERE id = $1`, companyID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	for _, id := range userIDs {
+		var left int
+		if err := rw.ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM company_users WHERE user_id = $1`, id).Scan(&left); err != nil {
+			return err
+		}
+		if left > 0 {
+			continue
+		}
+		if _, err := rw.ex.ExecContext(ctx, `DELETE FROM client_import_batches WHERE user_id = $1`, id); err != nil {
+			return err
+		}
+		if _, err := rw.ex.ExecContext(ctx, `
+DELETE FROM users WHERE id = $1 AND is_platform_admin = FALSE
+`, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// DeleteCompanyAdmin borra la cuenta de un administrador de empresa. No toca super admins.
+func (db *DB) DeleteCompanyAdmin(ctx context.Context, userID int64) error {
+	tx, rw, err := db.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var platform bool
+	err = rw.ex.QueryRowContext(ctx, `SELECT is_platform_admin FROM users WHERE id = $1`, userID).Scan(&platform)
+	if err != nil {
+		return err
+	}
+	if platform {
+		return errors.New("no se puede borrar un super admin desde aquí")
+	}
+	if _, err := rw.ex.ExecContext(ctx, `DELETE FROM client_import_batches WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	res, err := rw.ex.ExecContext(ctx, `DELETE FROM users WHERE id = $1 AND is_platform_admin = FALSE`, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
 	}
 	return tx.Commit()
 }

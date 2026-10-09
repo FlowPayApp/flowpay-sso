@@ -2,24 +2,28 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Addr      string
-	DSN       string
-	JWTSecret string
-	JWTTTL    time.Duration
+	Addr              string
+	DSN               string
+	JWTSecret         string
+	JWTTTL            time.Duration
+	SMTPHost          string
+	SMTPPort          string
+	SMTPUser          string
+	SMTPPassword      string
+	SMTPFrom          string
+	SignupNotifyEmail string
 }
 
 func Load() Config {
 	_ = godotenv.Load()
-	addr := os.Getenv("FLOWPAY_SSO_ADDR")
-	if addr == "" {
-		addr = ":9090"
-	}
+	addr := listenAddr("FLOWPAY_SSO_ADDR", ":9090")
 	dsn := os.Getenv("FLOWPAY_SSO_DSN")
 	if dsn == "" {
 		dsn = os.Getenv("FLOWPAY_DSN")
@@ -34,5 +38,29 @@ func Load() Config {
 			ttl = d
 		}
 	}
-	return Config{Addr: addr, DSN: dsn, JWTSecret: secret, JWTTTL: ttl}
+	return Config{
+		Addr:              addr,
+		DSN:               dsn,
+		JWTSecret:         secret,
+		JWTTTL:            ttl,
+		SMTPHost:          os.Getenv("FLOWPAY_SMTP_HOST"),
+		SMTPPort:          os.Getenv("FLOWPAY_SMTP_PORT"),
+		SMTPUser:          os.Getenv("FLOWPAY_SMTP_USER"),
+		SMTPPassword:      os.Getenv("FLOWPAY_SMTP_PASSWORD"),
+		SMTPFrom:          os.Getenv("FLOWPAY_SMTP_FROM"),
+		SignupNotifyEmail: os.Getenv("FLOWPAY_SIGNUP_NOTIFY_EMAIL"),
+	}
+}
+
+func listenAddr(primaryKey, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(primaryKey)); v != "" {
+		return v
+	}
+	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
+		if strings.HasPrefix(p, ":") {
+			return p
+		}
+		return ":" + p
+	}
+	return fallback
 }

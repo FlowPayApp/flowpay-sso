@@ -13,6 +13,8 @@ func Register(r *gin.Engine, auth *controller.AuthController, clients *controlle
 		c.JSON(http.StatusOK, gin.H{"service": "flowpay-sso", "status": "ok"})
 	})
 
+	r.GET("/auth/plans", auth.ListSignupPlans)
+	r.PATCH("/auth/platform/plans/:id", auth.UpdateSignupPlan)
 	r.POST("/auth/register", auth.Register)
 	r.POST("/auth/login", auth.Login)
 	r.GET("/auth/me", auth.GetProfile)
@@ -27,10 +29,12 @@ func Register(r *gin.Engine, auth *controller.AuthController, clients *controlle
 	r.POST("/auth/platform/companies", auth.CreateCompany)
 	r.POST("/auth/platform/companies-with-admin", auth.CreateCompanyWithAdmin)
 	r.PATCH("/auth/platform/companies/:id", auth.UpdateCompany)
+	r.DELETE("/auth/platform/companies/:id", auth.DeleteCompany)
 	r.GET("/auth/platform/company-admins", auth.ListCompanyAdmins)
 	r.POST("/auth/platform/company-admins", auth.CreateCompanyAdmin)
 	r.PATCH("/auth/platform/company-admins/:user_id", auth.UpdateCompanyAdmin)
 	r.POST("/auth/platform/company-admins/:user_id/reset-password", auth.ResetCompanyAdminPassword)
+	r.DELETE("/auth/platform/company-admins/:user_id", auth.DeleteCompanyAdmin)
 
 	api := r.Group("/api")
 	api.Use(middleware.BearerJWT(jwtSecret))
