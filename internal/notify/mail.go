@@ -1,10 +1,13 @@
 package notify
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
+	"net"
 	"net/smtp"
 	"strings"
+	"time"
 )
 
 // SMTP envío simple por STARTTLS, puerto 587.
@@ -83,7 +86,7 @@ func (s SMTP) SendTemporaryPassword(to, name, password string) error {
 	if who != "" && who != to {
 		greeting = "Estimado " + who + ","
 	}
-	return s.send([]string{to}, "Su clave temporal de acceso a GeldFlus", letter{
+	err := s.send([]string{to}, "Su clave temporal de acceso a GeldFlus", letter{
 		Kicker:   "Acceso a su cuenta",
 		Greeting: greeting,
 		Lines: []string{
@@ -93,6 +96,10 @@ func (s SMTP) SendTemporaryPassword(to, name, password string) error {
 		},
 		Secret: password,
 	})
+	if err != nil {
+		log.Printf("[FlowPay] no se pudo enviar la clave temporal a %s: %v", to, err)
+	}
+	return err
 }
 
 // SendSecurity avisa a los super admin. No incluye contraseñas ni cuerpos de mensajes.
@@ -113,19 +120,66 @@ func (s SMTP) SendSecurity(to []string, subject, body string) error {
 	return nil
 }
 
+const smtpTimeout = 12 * time.Second
+
 func (s SMTP) send(to []string, subject string, note letter) error {
 	htmlBody, err := note.html()
 	if err != nil {
 		return err
 	}
+	host := strings.TrimSpace(s.Host)
 	port := strings.TrimSpace(s.Port)
 	if port == "" {
 		port = "587"
 	}
-	msg := s.writeMessage(to, subject, note.plain(), htmlBody)
-	addr := strings.TrimSpace(s.Host) + ":" + port
-	auth := smtp.PlainAuth("", s.Username, s.Password, s.Host)
-	return smtp.SendMail(addr, auth, strings.TrimSpace(s.From), to, msg)
+	addr := net.JoinHostPort(host, port)
+	dialer := &net.Dialer{Timeout: smtpTimeout}
+	var conn net.Conn
+	if port == "465" {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host})
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
+	if err != nil {
+		return fmt.Errorf("conectar %s: %w", addr, err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(smtpTimeout))
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return fmt.Errorf("cliente smtp: %w", err)
+	}
+	defer client.Close()
+	if port != "465" {
+		if err := client.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			return fmt.Errorf("starttls: %w", err)
+		}
+	}
+	if err := client.Auth(smtp.PlainAuth("", s.Username, s.Password, host)); err != nil {
+		return fmt.Errorf("auth smtp: %w", err)
+	}
+	from := strings.TrimSpace(s.From)
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, rcpt := range to {
+		if err := client.Rcpt(rcpt); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(s.writeMessage(to, subject, note.plain(), htmlBody)); err != nil {
+		_ = w.Close()
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 func clean(in []string) []string {

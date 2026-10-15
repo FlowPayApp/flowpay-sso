@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1425,6 +1426,15 @@ func (h *AuthController) ResetCompanyAdminPassword(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "hash"})
 		return
 	}
+	target, err := h.Repo.GetUserByID(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "admin no encontrado"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if err := h.Repo.SetCompanyAdminTemporaryPassword(c.Request.Context(), userID, string(hash)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "admin no encontrado"})
@@ -1433,15 +1443,13 @@ func (h *AuthController) ResetCompanyAdminPassword(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	target, err := h.Repo.GetUserByID(c.Request.Context(), userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if !h.deliverTempPassword(c, target.Email, target.Name, tempPassword) {
+		if err := h.Repo.RestoreCompanyAdminPassword(c.Request.Context(), userID, target.PasswordHash, target.MustChangePassword); err != nil {
+			log.Printf("[FlowPay] no se pudo restaurar la clave de %d tras fallar el correo: %v", userID, err)
+		}
 		return
 	}
 	if !h.revokeUser(c, userID) {
-		return
-	}
-	if !h.deliverTempPassword(c, target.Email, target.Name, tempPassword) {
 		return
 	}
 	companyID, _ := h.Repo.CompanyIDForUser(c.Request.Context(), userID)

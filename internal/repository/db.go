@@ -722,6 +722,25 @@ func (db *DB) SetCompanyAdminTemporaryPassword(ctx context.Context, userID int64
 	return nil
 }
 
+// RestoreCompanyAdminPassword devuelve la clave anterior si el correo de la nueva no salió.
+func (db *DB) RestoreCompanyAdminPassword(ctx context.Context, userID int64, passwordHash string, mustChange bool) error {
+	res, err := db.ex.ExecContext(ctx,
+		`UPDATE users SET password_hash = $1, must_change_password = $2 WHERE id = $3 AND is_platform_admin = FALSE`,
+		passwordHash, mustChange, userID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // SetCompanyAdminActive activa o desactiva el login del usuario (no aplica a platform_admin).
 func (db *DB) SetCompanyAdminActive(ctx context.Context, userID int64, active bool) error {
 	res, err := db.ex.ExecContext(ctx, `UPDATE users SET is_active = $1 WHERE id = $2 AND is_platform_admin = FALSE`, active, userID)

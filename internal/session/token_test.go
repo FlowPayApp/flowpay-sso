@@ -38,6 +38,17 @@ func TestSameSiteOrigin(t *testing.T) {
 		t.Fatal("un Origin ajeno no debería pasar")
 	}
 
+	proxied := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
+	proxied.Host = "flowpay-sso-production.up.railway.app"
+	proxied.Header.Set("Origin", "https://www.geldflus.com")
+	proxied.Header.Set("X-Forwarded-Host", "flowpay-sso-production.up.railway.app")
+	proxied.Header.Set("X-Forwarded-Proto", "http")
+	proxied.Header.Set("X-Flowpay-Public-Host", "www.geldflus.com")
+	proxied.Header.Set("X-Flowpay-Public-Proto", "https")
+	if !SameSiteOrigin(proxied) {
+		t.Fatal("el host público del front debe ganar al host interno del proxy")
+	}
+
 	missing := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
 	missing.Host = "geldflus.com"
 	missing.Header.Set("X-Forwarded-Proto", "https")
