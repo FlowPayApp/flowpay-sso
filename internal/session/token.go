@@ -41,14 +41,20 @@ func SameSiteOrigin(r *http.Request) bool {
 	if err != nil || u.Host == "" || u.Scheme == "" {
 		return false
 	}
-	host := firstHeader(r.Header.Get("X-Forwarded-Host"))
+	host := firstHeader(r.Header.Get("X-Flowpay-Public-Host"))
+	if host == "" {
+		host = firstHeader(r.Header.Get("X-Forwarded-Host"))
+	}
 	if host == "" {
 		host = r.Host
 	}
 	if !strings.EqualFold(u.Host, host) {
 		return false
 	}
-	proto := firstHeader(r.Header.Get("X-Forwarded-Proto"))
+	proto := firstHeader(r.Header.Get("X-Flowpay-Public-Proto"))
+	if proto == "" {
+		proto = firstHeader(r.Header.Get("X-Forwarded-Proto"))
+	}
 	if proto == "" {
 		if r.TLS != nil {
 			proto = "https"
