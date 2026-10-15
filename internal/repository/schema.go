@@ -63,3 +63,51 @@ WHERE cu.user_id = u.id
 	}
 	return nil
 }
+
+// EnsureAuthSessions guarda solo el hash del refresh token, nunca el valor de la cookie.
+func (db *DB) EnsureAuthSessions(ctx context.Context) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS auth_sessions (
+			id BIGSERIAL PRIMARY KEY,
+			user_id BIGINT NOT NULL,
+			current_token_hash TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			absolute_expires_at TIMESTAMPTZ NOT NULL,
+			revoked_at TIMESTAMPTZ NULL
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS ux_auth_sessions_current_hash ON auth_sessions (current_token_hash) WHERE revoked_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions (user_id)`,
+		`CREATE TABLE IF NOT EXISTS auth_session_tokens (
+			token_hash TEXT PRIMARY KEY,
+			session_id BIGINT NOT NULL REFERENCES auth_sessions (id) ON DELETE CASCADE,
+			consumed_at TIMESTAMPTZ NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_auth_session_tokens_session ON auth_session_tokens (session_id)`,
+		`CREATE TABLE IF NOT EXISTS session_access_tokens (
+			jti TEXT PRIMARY KEY,
+			session_id BIGINT NOT NULL REFERENCES auth_sessions (id) ON DELETE CASCADE,
+			expires_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_access_tokens_session ON session_access_tokens (session_id)`,
+		`CREATE TABLE IF NOT EXISTS revoked_access_tokens (
+			jti TEXT PRIMARY KEY,
+			expires_at TIMESTAMPTZ NOT NULL
+		)`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS auth_audit (
+			id BIGSERIAL PRIMARY KEY,
+			actor_user_id BIGINT,
+			target_user_id BIGINT,
+			company_id BIGINT,
+			action TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+	}
+	for _, q := range stmts {
+		if _, err := db.ex.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
+	return nil
+}

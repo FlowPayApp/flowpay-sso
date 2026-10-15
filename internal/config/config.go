@@ -13,6 +13,8 @@ type Config struct {
 	DSN               string
 	JWTSecret         string
 	JWTTTL            time.Duration
+	RefreshIdle       time.Duration
+	RefreshAbsolute   time.Duration
 	SMTPHost          string
 	SMTPPort          string
 	SMTPUser          string
@@ -32,17 +34,16 @@ func Load() Config {
 		dsn = "postgres://flowpay:flowpay@127.0.0.1:5432/flowpay?sslmode=disable"
 	}
 	secret := os.Getenv("FLOWPAY_JWT_SECRET")
-	ttl := 24 * time.Hour
-	if s := os.Getenv("FLOWPAY_JWT_TTL"); s != "" {
-		if d, err := time.ParseDuration(s); err == nil {
-			ttl = d
-		}
-	}
+	access := durationEnv("FLOWPAY_ACCESS_TTL", 15*time.Minute)
+	idle := durationEnv("FLOWPAY_REFRESH_IDLE", 2*time.Hour)
+	absolute := durationEnv("FLOWPAY_REFRESH_ABSOLUTE", 12*time.Hour)
 	return Config{
 		Addr:              addr,
 		DSN:               dsn,
 		JWTSecret:         secret,
-		JWTTTL:            ttl,
+		JWTTTL:            access,
+		RefreshIdle:       idle,
+		RefreshAbsolute:   absolute,
 		SMTPHost:          os.Getenv("FLOWPAY_SMTP_HOST"),
 		SMTPPort:          os.Getenv("FLOWPAY_SMTP_PORT"),
 		SMTPUser:          os.Getenv("FLOWPAY_SMTP_USER"),
@@ -50,6 +51,18 @@ func Load() Config {
 		SMTPFrom:          os.Getenv("FLOWPAY_SMTP_FROM"),
 		SignupNotifyEmail: os.Getenv("FLOWPAY_SIGNUP_NOTIFY_EMAIL"),
 	}
+}
+
+func durationEnv(key string, fallback time.Duration) time.Duration {
+	s := strings.TrimSpace(os.Getenv(key))
+	if s == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
 }
 
 func listenAddr(primaryKey, fallback string) string {
