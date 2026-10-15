@@ -1,6 +1,8 @@
 package authjwt
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -17,10 +19,19 @@ type AccessClaims struct {
 	jwt.RegisteredClaims
 }
 
-func SignAccessToken(secret []byte, userID, companyID int64, email, role string, ttl time.Duration) (string, error) {
+// SignAccessToken firma el access token y devuelve su jti.
+// El jti son 32 caracteres hex (16 bytes aleatorios) en el claim estándar `jti`.
+// Si la sesión se revoca, ese valor queda en revoked_access_tokens hasta expires_at.
+// Backend y payments rechazan el token cuando el jti está en esa tabla. Validar la firma no consulta la base.
+func SignAccessToken(secret []byte, userID, companyID int64, email, role string, ttl time.Duration) (string, string, error) {
 	if len(secret) < 16 {
-		return "", fmt.Errorf("FLOWPAY_JWT_SECRET demasiado corto (mín. 16 caracteres)")
+		return "", "", fmt.Errorf("FLOWPAY_JWT_SECRET demasiado corto (mín. 16 caracteres)")
 	}
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
+	jti := hex.EncodeToString(buf)
 	now := time.Now()
 	claims := AccessClaims{
 		UserID:    userID,
@@ -28,6 +39,7 @@ func SignAccessToken(secret []byte, userID, companyID int64, email, role string,
 		Email:     email,
 		Role:      role,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
 			Subject:   fmt.Sprintf("%d", userID),
 			Issuer:    "flowpay-sso",
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -35,7 +47,11 @@ func SignAccessToken(secret []byte, userID, companyID int64, email, role string,
 		},
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims)
-	return t.SignedString(secret)
+	signed, err := t.SignedString(secret)
+	if err != nil {
+		return "", "", err
+	}
+	return signed, jti, nil
 }
 
 func ParseAccessToken(secret []byte, raw string) (*AccessClaims, error) {

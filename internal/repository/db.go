@@ -22,6 +22,7 @@ type User struct {
 	IsPlatformAdmin    bool
 	MustChangePassword bool
 	IsActive           bool
+	TotpSecret         string
 }
 
 type Company struct {
@@ -47,6 +48,13 @@ type CompanyAdmin struct {
 	Name        string `json:"name"`
 	Role        string `json:"role"`
 	IsActive    bool   `json:"is_active"`
+}
+
+type PlatformAdmin struct {
+	UserID   int64  `json:"user_id"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	IsActive bool   `json:"is_active"`
 }
 
 type CompanyUser struct {
@@ -82,9 +90,9 @@ func (db *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	var u User
 	err := db.ex.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE email = $1 LIMIT 1`,
+		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active, totp_secret FROM users WHERE email = $1 LIMIT 1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &u.IsActive)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &u.IsActive, &u.TotpSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -94,13 +102,56 @@ func (db *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 func (db *DB) GetUserByID(ctx context.Context, userID int64) (*User, error) {
 	var u User
 	err := db.ex.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active FROM users WHERE id = $1 LIMIT 1`,
+		`SELECT id, email, password_hash, name, is_platform_admin, must_change_password, is_active, totp_secret FROM users WHERE id = $1 LIMIT 1`,
 		userID,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &u.IsActive)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.IsPlatformAdmin, &u.MustChangePassword, &u.IsActive, &u.TotpSecret)
 	if err != nil {
 		return nil, err
 	}
 	return &u, nil
+}
+
+// ClaimOrphanUser reutiliza un correo que ya no pertenece a ninguna empresa.
+// Devuelve claimed=false si el correo está libre. Un super admin o alguien que sigue en un equipo no se toca.
+func (db *DB) ClaimOrphanUser(ctx context.Context, email, passwordHash, name string) (int64, bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	var id int64
+	var platform bool
+	err := db.ex.QueryRowContext(ctx, `
+SELECT id, is_platform_admin FROM users WHERE LOWER(email) = $1 LIMIT 1`, email).Scan(&id, &platform)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if platform {
+		return 0, false, ErrPlatformEmail
+	}
+	var memberships int
+	if err := db.ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM company_users WHERE user_id = $1`, id).Scan(&memberships); err != nil {
+		return 0, false, err
+	}
+	if memberships > 0 {
+		return 0, false, ErrEmailStillInCompany
+	}
+	res, err := db.ex.ExecContext(ctx, `
+UPDATE users
+SET email = $1, password_hash = $2, name = $3, must_change_password = TRUE, is_active = TRUE, totp_secret = ''
+WHERE id = $4 AND is_platform_admin = FALSE`,
+		email, passwordHash, strings.TrimSpace(name), id,
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, false, err
+	}
+	if n == 0 {
+		return 0, false, ErrEmailTaken
+	}
+	return id, true, nil
 }
 
 func (db *DB) CreateUser(ctx context.Context, email, passwordHash, name string, isPlatformAdmin, mustChangePassword, isActive bool) (int64, error) {
@@ -277,6 +328,160 @@ ORDER BY id ASC
 		out = append(out, email)
 	}
 	return out, rows.Err()
+}
+
+func (db *DB) ListPlatformAdmins(ctx context.Context) ([]PlatformAdmin, error) {
+	rows, err := db.ex.QueryContext(ctx, `
+SELECT id, email, name, is_active
+FROM users
+WHERE is_platform_admin = TRUE
+ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PlatformAdmin{}
+	for rows.Next() {
+		var a PlatformAdmin
+		if err := rows.Scan(&a.UserID, &a.Email, &a.Name, &a.IsActive); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// CreatePlatformAdmin crea un superadmin. Si el correo quedó sin empresa, reutiliza esa cuenta.
+func (db *DB) CreatePlatformAdmin(ctx context.Context, email, passwordHash, name string) (int64, bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	name = strings.TrimSpace(name)
+	var id int64
+	var platform bool
+	err := db.ex.QueryRowContext(ctx, `SELECT id, is_platform_admin FROM users WHERE LOWER(email) = $1 LIMIT 1`, email).Scan(&id, &platform)
+	if errors.Is(err, sql.ErrNoRows) {
+		id, err = db.CreateUser(ctx, email, passwordHash, name, true, true, true)
+		return id, false, err
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if platform {
+		return 0, false, ErrPlatformEmail
+	}
+	var memberships int
+	if err := db.ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM company_users WHERE user_id = $1`, id).Scan(&memberships); err != nil {
+		return 0, false, err
+	}
+	if memberships > 0 {
+		return 0, false, ErrEmailStillInCompany
+	}
+	res, err := db.ex.ExecContext(ctx, `
+UPDATE users
+SET email = $1, password_hash = $2, name = $3, is_platform_admin = TRUE, must_change_password = TRUE, is_active = TRUE, totp_secret = ''
+WHERE id = $4 AND is_platform_admin = FALSE`,
+		email, passwordHash, name, id,
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, false, err
+	}
+	if n == 0 {
+		return 0, false, ErrEmailTaken
+	}
+	return id, true, nil
+}
+
+func (db *DB) SetPlatformAdminActive(ctx context.Context, userID int64, active bool) error {
+	tx, rw, err := db.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var platform bool
+	err = rw.ex.QueryRowContext(ctx, `SELECT is_platform_admin FROM users WHERE id = $1`, userID).Scan(&platform)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !platform) {
+		return sql.ErrNoRows
+	}
+	if err != nil {
+		return err
+	}
+	if !active {
+		var others int
+		if err := rw.ex.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM users
+WHERE is_platform_admin = TRUE AND is_active = TRUE AND id <> $1`, userID).Scan(&others); err != nil {
+			return err
+		}
+		if others == 0 {
+			return ErrLastPlatformAdmin
+		}
+	}
+	res, err := rw.ex.ExecContext(ctx, `UPDATE users SET is_active = $1 WHERE id = $2 AND is_platform_admin = TRUE`, active, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
+// DeletePlatformAdmin borra un superadmin y cierra sus sesiones. Siempre queda al menos uno activo.
+func (db *DB) DeletePlatformAdmin(ctx context.Context, userID int64) ([]string, error) {
+	tx, rw, err := db.BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var platform, active bool
+	err = rw.ex.QueryRowContext(ctx, `SELECT is_platform_admin, is_active FROM users WHERE id = $1`, userID).Scan(&platform, &active)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !platform) {
+		return nil, sql.ErrNoRows
+	}
+	if err != nil {
+		return nil, err
+	}
+	var others, othersActive int
+	if err := rw.ex.QueryRowContext(ctx, `
+SELECT COUNT(*), COUNT(*) FILTER (WHERE is_active)
+FROM users
+WHERE is_platform_admin = TRUE AND id <> $1`, userID).Scan(&others, &othersActive); err != nil {
+		return nil, err
+	}
+	if others == 0 || (active && othersActive == 0) {
+		return nil, ErrLastPlatformAdmin
+	}
+	revoked, err := rw.RevokeUserSessions(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := rw.ex.ExecContext(ctx, `DELETE FROM client_import_batches WHERE user_id = $1`, userID); err != nil {
+		return nil, err
+	}
+	res, err := rw.ex.ExecContext(ctx, `DELETE FROM users WHERE id = $1 AND is_platform_admin = TRUE`, userID)
+	if err != nil {
+		return nil, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, sql.ErrNoRows
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return revoked, nil
 }
 
 func (db *DB) CountPlatformAdmins(ctx context.Context) (int64, error) {
@@ -575,9 +780,12 @@ LIMIT 1`,
 	return true, nil
 }
 
-var ErrEmailTaken = errors.New("email ya registrado")
+var ErrEmailTaken = errors.New("Ese correo ya está registrado.")
+var ErrPlatformEmail = errors.New("Ese correo es de un superadmin. Está en la lista de Superadmins.")
+var ErrEmailStillInCompany = errors.New("Ese correo sigue en una empresa.")
 var ErrCompanyUserNotFound = errors.New("usuario no encontrado en el equipo")
 var ErrLastCompanyAdmin = errors.New("la empresa debe conservar al menos un administrador activo")
+var ErrLastPlatformAdmin = errors.New("Tiene que quedar al menos un superadmin activo.")
 
 func (db *DB) countOtherActiveAdmins(ctx context.Context, companyID, exceptUserID int64) (int, error) {
 	var n int
@@ -703,6 +911,12 @@ WHERE cu.company_id = $1 AND u.is_platform_admin = FALSE
 	}
 	rows.Close()
 
+	for _, id := range userIDs {
+		if _, err := rw.RevokeUserSessions(ctx, id); err != nil {
+			return err
+		}
+	}
+
 	for _, q := range []string{
 		`DELETE FROM reminder_messages WHERE company_id = $1`,
 		`DELETE FROM messages WHERE company_id = $1`,
@@ -826,11 +1040,17 @@ func (db *DB) RemoveCompanyMember(ctx context.Context, companyID, userID, reassi
 	if n == 0 {
 		return ErrCompanyUserNotFound
 	}
-	if _, err := rw.ex.ExecContext(ctx,
-		`UPDATE users SET is_active = FALSE WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM company_users WHERE user_id = $1)`,
-		userID,
-	); err != nil {
+	var left int
+	if err := rw.ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM company_users WHERE user_id = $1`, userID).Scan(&left); err != nil {
 		return err
+	}
+	if left == 0 {
+		if _, err := rw.RevokeUserSessions(ctx, userID); err != nil {
+			return err
+		}
+		if _, err := rw.ex.ExecContext(ctx, `DELETE FROM users WHERE id = $1 AND is_platform_admin = FALSE`, userID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

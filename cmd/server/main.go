@@ -44,7 +44,13 @@ func main() {
 	if err := repo.EnsureSignupColumns(context.Background()); err != nil {
 		log.Printf("warn: columnas de solicitud de cuenta: %v", err)
 	}
-	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL)
+	if err := repo.EnsureAuthSessions(context.Background()); err != nil {
+		log.Printf("warn: tabla de sesiones: %v", err)
+	}
+	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL, cfg.RefreshIdle, cfg.RefreshAbsolute)
+	if err := auth.WarmRevoked(context.Background()); err != nil {
+		log.Printf("warn: lista de tokens revocados: %v", err)
+	}
 	auth.SignupSMTP = notify.SMTP{
 		Host:     cfg.SMTPHost,
 		Port:     cfg.SMTPPort,
