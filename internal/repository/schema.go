@@ -39,9 +39,9 @@ func (db *DB) EnsureSignupColumns(ctx context.Context) error {
 			sort_order INT NOT NULL DEFAULT 0
 		)`,
 		`INSERT INTO signup_plans (id, label, detail, price_clp, period, features, highlight, commission_percent, sort_order) VALUES
-			('esencial', 'Esencial', 'Para una operación chica que hoy cobra a mano.', 39000, 'mes', E'Hasta 25 sucursales\nRecordatorios por correo y WhatsApp\nEnlace de pago con Webpay\n1 administrador', FALSE, 0, 1),
-			('crecimiento', 'Crecimiento', 'Para quien ya recorre varias sucursales y necesita equipo.', 89000, 'mes', E'Hasta 120 sucursales\nTodo lo de Esencial\nCobradores en el equipo\nCarga de sucursales desde Excel', TRUE, 0, 2),
-			('empresa', 'Empresa', 'Para una red grande, con puesta en marcha acompañada.', 169000, 'mes', E'Sucursales sin tope\nTodo lo de Crecimiento\nVarios administradores\nAcompañamiento en la carga inicial', FALSE, 0, 3)
+			('esencial', 'Esencial', 'Para una operación chica que hoy cobra a mano.', 89000, 'mes', E'Hasta 25 sucursales\nRecordatorios por correo y WhatsApp\nEnlace de pago con Webpay\n2 administradores', FALSE, 0, 1),
+			('crecimiento', 'Crecimiento', 'Para quien ya recorre varias sucursales y necesita equipo.', 189000, 'mes', E'Hasta 120 sucursales\nTodo lo de Esencial\nCobradores en el equipo\nCarga de sucursales desde Excel', TRUE, 0, 2),
+			('empresa', 'Empresa', 'Para una red grande, con puesta en marcha acompañada.', 349000, 'mes', E'Sucursales sin tope\nTodo lo de Crecimiento\nVarios administradores\nAcompañamiento en la carga inicial', FALSE, 0, 3)
 		ON CONFLICT (id) DO NOTHING`,
 		`UPDATE companies SET approved_at = NOW() WHERE is_active = TRUE AND approved_at IS NULL`,
 		`UPDATE users u SET is_active = FALSE
