@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,11 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	// El pooler de Supabase en modo sesión admite 15 clientes en total.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxIdleTime(time.Minute)
+	db.SetConnMaxLifetime(3 * time.Minute)
 	if err := db.Ping(); err != nil {
 		log.Fatal("postgres ping:", err)
 	}
@@ -136,7 +142,7 @@ func printStartupStatus(db *sql.DB, addr, dsn, jwtSecret string) {
 
 func allowBrowserOrigin(origin string) bool {
 	switch origin {
-	case "https://geldflus.com", "https://www.geldflus.com":
+	case "https://geldflus.com", "https://www.geldflus.com", "https://app.geldflus.com":
 		return true
 	}
 	if isLocalDevOrigin(origin) {
