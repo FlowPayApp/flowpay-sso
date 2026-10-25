@@ -113,6 +113,8 @@ type updateCompanyBody struct {
 	CommissionPercentOverride *float64 `json:"commission_percent_override"`
 	ClearPriceOverride        *bool    `json:"clear_price_override"`
 	ClearCommissionOverride   *bool    `json:"clear_commission_override"`
+	AllowEmail                *bool    `json:"allow_email"`
+	AllowWhatsApp             *bool    `json:"allow_whatsapp"`
 }
 
 type updatePlanBody struct {
@@ -1020,7 +1022,8 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 	hasCommercial := body.RequestedPlan != nil || body.PriceCLPOverride != nil || body.CommissionPercentOverride != nil ||
 		(body.ClearPriceOverride != nil && *body.ClearPriceOverride) ||
 		(body.ClearCommissionOverride != nil && *body.ClearCommissionOverride)
-	if body.Name == nil && body.IsActive == nil && !hasCommercial {
+	hasAccess := body.AllowEmail != nil || body.AllowWhatsApp != nil
+	if body.Name == nil && body.IsActive == nil && !hasCommercial && !hasAccess {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "indica qué quieres cambiar"})
 		return
 	}
@@ -1053,7 +1056,7 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 			return
 		}
 	}
-	if body.Name == nil && body.IsActive == nil {
+	if body.Name == nil && body.IsActive == nil && !hasAccess {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
@@ -1081,7 +1084,7 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 	activating := body.IsActive != nil && *body.IsActive
 	firstApproval := activating && signupAdmin.Plan != "" && !signupAdmin.Approved
 	issuingPassword := firstApproval && signupAdmin.UserID > 0 && signupAdmin.MustChange
-	if err := h.Repo.PatchCompany(c.Request.Context(), companyID, namePtr, body.IsActive); err != nil {
+	if err := h.Repo.PatchCompany(c.Request.Context(), companyID, namePtr, body.IsActive, body.AllowEmail, body.AllowWhatsApp); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "empresa no encontrada"})
 			return
