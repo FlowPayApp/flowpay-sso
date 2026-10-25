@@ -38,6 +38,8 @@ type Company struct {
 	Approved                  bool     `json:"approved"`
 	PriceCLPOverride          *int     `json:"price_clp_override"`
 	CommissionPercentOverride *float64 `json:"commission_percent_override"`
+	AllowEmail                bool     `json:"allow_email"`
+	AllowWhatsApp             bool     `json:"allow_whatsapp"`
 }
 
 type CompanyAdmin struct {
@@ -504,7 +506,9 @@ SELECT c.id, c.name, c.is_active,
        COALESCE(adm.email, '') AS contact_email,
        (c.approved_at IS NOT NULL) AS approved,
        c.price_clp_override,
-       c.commission_percent_override
+       c.commission_percent_override,
+       COALESCE(c.allow_email, TRUE) AS allow_email,
+       COALESCE(c.allow_whatsapp, TRUE) AS allow_whatsapp
 FROM companies c
 LEFT JOIN (
 	SELECT company_id, COUNT(1) AS client_count
@@ -537,7 +541,7 @@ ORDER BY c.id ASC
 		var c Company
 		var price sql.NullInt64
 		var commission sql.NullFloat64
-		if err := rows.Scan(&c.ID, &c.Name, &c.IsActive, &c.ClientCount, &c.AdminCount, &c.ContactPhone, &c.RequestedPlan, &c.ContactName, &c.ContactEmail, &c.Approved, &price, &commission); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.IsActive, &c.ClientCount, &c.AdminCount, &c.ContactPhone, &c.RequestedPlan, &c.ContactName, &c.ContactEmail, &c.Approved, &price, &commission, &c.AllowEmail, &c.AllowWhatsApp); err != nil {
 			return nil, err
 		}
 		if price.Valid {
@@ -613,9 +617,9 @@ WHERE cu.user_id = u.id
 	return err
 }
 
-// PatchCompany actualiza nombre y/o estado. Al menos uno debe ser no nil.
-func (db *DB) PatchCompany(ctx context.Context, companyID int64, name *string, isActive *bool) error {
-	if name == nil && isActive == nil {
+// PatchCompany actualiza nombre, estado y los medios de aviso que la empresa puede usar.
+func (db *DB) PatchCompany(ctx context.Context, companyID int64, name *string, isActive, allowEmail, allowWhatsApp *bool) error {
+	if name == nil && isActive == nil && allowEmail == nil && allowWhatsApp == nil {
 		return errors.New("nada que actualizar")
 	}
 	var parts []string
@@ -629,6 +633,16 @@ func (db *DB) PatchCompany(ctx context.Context, companyID int64, name *string, i
 	if isActive != nil {
 		parts = append(parts, fmt.Sprintf("is_active = $%d", n))
 		args = append(args, *isActive)
+		n++
+	}
+	if allowEmail != nil {
+		parts = append(parts, fmt.Sprintf("allow_email = $%d", n))
+		args = append(args, *allowEmail)
+		n++
+	}
+	if allowWhatsApp != nil {
+		parts = append(parts, fmt.Sprintf("allow_whatsapp = $%d", n))
+		args = append(args, *allowWhatsApp)
 		n++
 	}
 	idPH := n

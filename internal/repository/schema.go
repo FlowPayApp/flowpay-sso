@@ -27,6 +27,8 @@ func (db *DB) EnsureSignupColumns(ctx context.Context) error {
 		`ALTER TABLE companies ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL`,
 		`ALTER TABLE companies ADD COLUMN IF NOT EXISTS price_clp_override INT NULL`,
 		`ALTER TABLE companies ADD COLUMN IF NOT EXISTS commission_percent_override NUMERIC(5,2) NULL`,
+		`ALTER TABLE companies ADD COLUMN IF NOT EXISTS allow_email BOOLEAN NOT NULL DEFAULT TRUE`,
+		`ALTER TABLE companies ADD COLUMN IF NOT EXISTS allow_whatsapp BOOLEAN NOT NULL DEFAULT TRUE`,
 		`CREATE TABLE IF NOT EXISTS signup_plans (
 			id TEXT PRIMARY KEY,
 			label TEXT NOT NULL,
