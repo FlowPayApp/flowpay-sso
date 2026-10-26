@@ -22,7 +22,7 @@ func BearerJWT(secret string, revoked func(string) bool) gin.HandlerFunc {
 		}
 		raw := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 		claims, err := authjwt.ParseAccessToken(sec, raw)
-		if err != nil || (revoked != nil && revoked(claims.ID)) {
+		if err != nil || claims.ID == "" || (revoked != nil && revoked(claims.ID)) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token inválido o expirado"})
 			return
 		}

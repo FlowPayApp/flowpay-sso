@@ -33,7 +33,7 @@ func Load() Config {
 	if dsn == "" {
 		dsn = "postgres://flowpay:flowpay@127.0.0.1:5432/flowpay?sslmode=disable"
 	}
-	secret := os.Getenv("FLOWPAY_JWT_SECRET")
+	secret := strings.TrimSpace(os.Getenv("FLOWPAY_JWT_SECRET"))
 	access := durationEnv("FLOWPAY_ACCESS_TTL", 15*time.Minute)
 	idle := durationEnv("FLOWPAY_REFRESH_IDLE", 2*time.Hour)
 	absolute := durationEnv("FLOWPAY_REFRESH_ABSOLUTE", 12*time.Hour)
@@ -63,6 +63,14 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+// Production es FLOWPAY_ENV=production o un despliegue que define PORT.
+func Production() bool {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("FLOWPAY_ENV")), "production") {
+		return true
+	}
+	return strings.TrimSpace(os.Getenv("PORT")) != ""
 }
 
 func listenAddr(primaryKey, fallback string) string {

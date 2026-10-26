@@ -25,8 +25,11 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if cfg.JWTSecret == "" {
-		log.Fatal("FLOWPAY_JWT_SECRET es obligatorio (mín. 16 caracteres, compartido con flowpay-backend)")
+	if len(strings.TrimSpace(cfg.JWTSecret)) < 16 {
+		log.Fatal("FLOWPAY_JWT_SECRET es obligatorio (mín. 16 caracteres, el mismo en backend y payments)")
+	}
+	if config.Production() && len(strings.TrimSpace(os.Getenv("FLOWPAY_DATA_KEY"))) < 32 {
+		log.Fatal("FLOWPAY_DATA_KEY es obligatoria en producción (mín. 32 caracteres); no se deriva del JWT")
 	}
 
 	db, err := sql.Open("pgx", cfg.DSN)
@@ -55,6 +58,9 @@ func main() {
 	}
 	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL, cfg.RefreshIdle, cfg.RefreshAbsolute)
 	if err := auth.WarmRevoked(context.Background()); err != nil {
+		if config.Production() {
+			log.Fatalf("revoked_access_tokens: %v", err)
+		}
 		log.Printf("warn: lista de tokens revocados: %v", err)
 	}
 	auth.SignupSMTP = notify.SMTP{
@@ -145,7 +151,7 @@ func allowBrowserOrigin(origin string) bool {
 	case "https://geldflus.com", "https://www.geldflus.com", "https://app.geldflus.com":
 		return true
 	}
-	if isLocalDevOrigin(origin) {
+	if !config.Production() && isLocalDevOrigin(origin) {
 		return true
 	}
 	for _, extra := range strings.Split(os.Getenv("FLOWPAY_CORS_ORIGINS"), ",") {

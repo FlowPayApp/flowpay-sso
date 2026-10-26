@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flowpay/flowpay-sso/internal/config"
 	"github.com/flowpay/flowpay-sso/internal/ratelimit"
 	"github.com/flowpay/flowpay-sso/internal/repository"
 	"github.com/flowpay/flowpay-sso/internal/revoked"
@@ -139,6 +140,9 @@ func (h *AuthController) audit(ctx context.Context, actor, target, company int64
 func (h *AuthController) dataKey() []byte {
 	material := strings.TrimSpace(os.Getenv("FLOWPAY_DATA_KEY"))
 	if material == "" {
+		if config.Production() {
+			log.Fatal("FLOWPAY_DATA_KEY es obligatoria en producción (mín. 32 caracteres); no se deriva del JWT")
+		}
 		material = string(h.JWTSecret)
 	}
 	return secretbox.Key(material)
