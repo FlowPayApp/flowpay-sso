@@ -69,6 +69,16 @@ func requireCompanyAdmin(c *gin.Context) bool {
 	return false
 }
 
+// ListClients godoc
+// @Summary Listar clientes
+// @Description Un member solo ve los clientes asignados a él.
+// @Tags Clientes
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} service.ClientDTO
+// @Failure 401 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /api/clients [get]
 func (h *ClientsController) ListClients(c *gin.Context) {
 	list, err := h.Svc.ListClients(c.Request.Context(), companyIDFromJWT(c), memberUIDFromJWT(c))
 	if err != nil {
@@ -109,6 +119,18 @@ func (b patchClientBody) hasPatchFields() bool {
 		b.AssignedTo != nil
 }
 
+// CreateClient godoc
+// @Summary Crear cliente
+// @Description Un member queda asignado a sí mismo. Un admin puede enviar assigned_to.
+// @Tags Clientes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateClientRequest true "Cliente"
+// @Success 201 {object} CreatedIDBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Router /api/clients [post]
 func (h *ClientsController) CreateClient(c *gin.Context) {
 	var body createClientBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -135,6 +157,21 @@ func (h *ClientsController) CreateClient(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"id": id})
 }
 
+// PatchClient godoc
+// @Summary Actualizar cliente
+// @Description El vendedor no puede cambiar is_active ni assigned_to.
+// @Tags Clientes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID de cliente"
+// @Param body body PatchClientRequest true "Campos a cambiar"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Router /api/clients/{id} [patch]
 func (h *ClientsController) PatchClient(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -179,6 +216,18 @@ func (h *ClientsController) PatchClient(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// GetClient godoc
+// @Summary Ver cliente
+// @Tags Clientes
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID de cliente"
+// @Success 200 {object} service.ClientDTO
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /api/clients/{id} [get]
 func (h *ClientsController) GetClient(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -197,6 +246,19 @@ func (h *ClientsController) GetClient(c *gin.Context) {
 	c.JSON(http.StatusOK, dto)
 }
 
+// DeleteClient godoc
+// @Summary Borrar cliente
+// @Description Solo admin de empresa.
+// @Tags Clientes
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID de cliente"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Router /api/clients/{id} [delete]
 func (h *ClientsController) DeleteClient(c *gin.Context) {
 	if !requireCompanyAdmin(c) {
 		return
@@ -222,6 +284,19 @@ type importDistributorRowsBody struct {
 	Filename *string    `json:"filename"`
 }
 
+// ImportDistributorRows godoc
+// @Summary Importar clientes desde planilla
+// @Description Solo admin. Primera fila: CODIGO, SUCURSAL, NOMBRE, DIRECCION, TELEFONO y MPAGO (o CPAGO).
+// @Tags Clientes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body ImportDistributorRowsRequest true "Filas de Excel"
+// @Success 200 {object} service.ImportDistributorResult
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Router /api/clients/import-distributor-rows [post]
 func (h *ClientsController) ImportDistributorRows(c *gin.Context) {
 	if !requireCompanyAdmin(c) {
 		return
@@ -250,6 +325,17 @@ func (h *ClientsController) ImportDistributorRows(c *gin.Context) {
 	c.JSON(http.StatusOK, res)
 }
 
+// ListImportBatches godoc
+// @Summary Historial de importaciones
+// @Description Solo admin de empresa.
+// @Tags Clientes
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} service.ClientImportBatchListItem
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /api/clients/import-batches [get]
 func (h *ClientsController) ListImportBatches(c *gin.Context) {
 	if !requireCompanyAdmin(c) {
 		return
@@ -262,6 +348,21 @@ func (h *ClientsController) ListImportBatches(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// GetImportBatch godoc
+// @Summary Detalle de una importación
+// @Description Solo admin de empresa.
+// @Tags Clientes
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID del lote"
+// @Success 200 {object} service.ClientImportBatchDetail
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Failure 503 {object} ErrorBody
+// @Router /api/clients/import-batches/{id} [get]
 func (h *ClientsController) GetImportBatch(c *gin.Context) {
 	if !requireCompanyAdmin(c) {
 		return

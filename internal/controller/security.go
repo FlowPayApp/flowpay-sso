@@ -272,6 +272,19 @@ type mfaBody struct {
 	Code  string `json:"code"`
 }
 
+// LoginMFA godoc
+// @Summary Completar login con TOTP
+// @Description Tras /auth/login de un superadmin. En el primer ingreso también enrola el secreto.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param body body MFARequest true "Token MFA y código"
+// @Success 200 {object} TokenBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 429 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/login/mfa [post]
 func (h *AuthController) LoginMFA(c *gin.Context) {
 	var body mfaBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -327,6 +340,19 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 	h.writeSession(c, item.UserID, item.CompanyID, item.Email, item.Role)
 }
 
+// ResetPlatformMFA godoc
+// @Summary Resetear TOTP de otro superadmin
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/admins/{user_id}/reset-mfa [post]
 func (h *AuthController) ResetPlatformMFA(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {

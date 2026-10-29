@@ -9,10 +9,7 @@ import (
 )
 
 func Register(r *gin.Engine, auth *controller.AuthController, clients *controller.ClientsController, jwtSecret string) {
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"service": "flowpay-sso", "status": "ok"})
-	})
-
+	r.GET("/health", Health)
 	r.GET("/auth/plans", auth.ListSignupPlans)
 	r.PATCH("/auth/platform/plans/:id", auth.UpdateSignupPlan)
 	r.POST("/auth/register", auth.Register)
@@ -56,4 +53,14 @@ func Register(r *gin.Engine, auth *controller.AuthController, clients *controlle
 		api.GET("/clients/:id", clients.GetClient)
 		api.DELETE("/clients/:id", clients.DeleteClient)
 	}
+}
+
+// Health godoc
+// @Summary Estado del servicio
+// @Tags Salud
+// @Produce json
+// @Success 200 {object} controller.HealthBody
+// @Router /health [get]
+func Health(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"service": "flowpay-sso", "status": "ok"})
 }

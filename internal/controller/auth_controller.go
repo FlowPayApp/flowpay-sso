@@ -165,6 +165,18 @@ func generateTemporaryPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+// Register godoc
+// @Summary Solicitar cuenta
+// @Description Crea una empresa pendiente. No entrega sesión. Notifica a los superadmins.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param body body RegisterRequest true "Datos de la solicitud"
+// @Success 201 {object} RegisterAcceptedBody
+// @Failure 400 {object} ErrorBody
+// @Failure 429 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/register [post]
 func (h *AuthController) Register(c *gin.Context) {
 	var body registerBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -258,6 +270,12 @@ func (h *AuthController) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, h.registerAccepted())
 }
 
+// ListSignupPlans godoc
+// @Summary Listar planes públicos
+// @Tags Auth
+// @Produce json
+// @Success 200 {array} signup.Plan
+// @Router /auth/plans [get]
 func (h *AuthController) ListSignupPlans(c *gin.Context) {
 	c.JSON(http.StatusOK, h.publishedPlans(c.Request.Context()))
 }
@@ -286,6 +304,20 @@ func (h *AuthController) planByID(c *gin.Context, id string) (signup.Plan, error
 	return signup.Plan{}, sql.ErrNoRows
 }
 
+// UpdateSignupPlan godoc
+// @Summary Editar un plan
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "ID del plan" example(crecimiento)
+// @Param body body UpdatePlanRequest true "Plan"
+// @Success 200 {object} signup.Plan
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Router /auth/platform/plans/{id} [patch]
 func (h *AuthController) UpdateSignupPlan(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
@@ -355,6 +387,20 @@ func onlyDigits(s string) string {
 	return b.String()
 }
 
+// Login godoc
+// @Summary Iniciar sesión
+// @Description Usuarios de empresa reciben JWT y cookie de refresh. Un superadmin recibe MFA (setup o código).
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param body body LoginRequest true "Credenciales"
+// @Success 200 {object} LoginResult
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} MessageBody
+// @Failure 429 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/login [post]
 func (h *AuthController) Login(c *gin.Context) {
 	var body loginBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -447,6 +493,17 @@ func (h *AuthController) authorize(c *gin.Context, allowedRoles ...string) (*aut
 	return nil, false
 }
 
+// GetProfile godoc
+// @Summary Perfil del token
+// @Tags Perfil
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} ProfileBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/me [get]
 func (h *AuthController) GetProfile(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin", "admin", "member")
 	if !ok {
@@ -471,6 +528,21 @@ func (h *AuthController) GetProfile(c *gin.Context) {
 	})
 }
 
+// UpdateProfile godoc
+// @Summary Actualizar perfil propio
+// @Description Si cambia la contraseña, se cierran las demás sesiones.
+// @Tags Perfil
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body UpdateOwnProfileRequest true "Perfil"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/me [patch]
 func (h *AuthController) UpdateProfile(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin", "admin", "member")
 	if !ok {
@@ -522,6 +594,21 @@ func (h *AuthController) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// CreateCompanyWithAdmin godoc
+// @Summary Crear empresa con admin
+// @Description Superadmin. Si solo llega company_name, crea la empresa sin usuario.
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateCompanyWithAdminRequest true "Empresa y admin"
+// @Success 201 {object} CreateCompanyWithAdminBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/companies-with-admin [post]
 func (h *AuthController) CreateCompanyWithAdmin(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
@@ -591,6 +678,18 @@ func (h *AuthController) CreateCompanyWithAdmin(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"company_id": companyID, "admin_user_id": userID})
 }
 
+// CreateCompany godoc
+// @Summary Crear empresa
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateCompanyRequest true "Nombre"
+// @Success 201 {object} CreateCompanyBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Router /auth/platform/companies [post]
 func (h *AuthController) CreateCompany(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
@@ -613,6 +712,21 @@ func (h *AuthController) CreateCompany(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"company_id": companyID})
 }
 
+// CreateCompanyUser godoc
+// @Summary Crear usuario del equipo
+// @Description Admin de empresa. Role: admin o member (por defecto member).
+// @Tags Equipo
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateCompanyUserRequest true "Usuario"
+// @Success 201 {object} CreateCompanyUserBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/company/users [post]
 func (h *AuthController) CreateCompanyUser(c *gin.Context) {
 	claims, ok := h.authorize(c, "admin")
 	if !ok {
@@ -677,6 +791,17 @@ func (h *AuthController) CreateCompanyUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID, "company_id": claims.CompanyID, "role": body.Role})
 }
 
+// ListCompanyUsers godoc
+// @Summary Listar equipo
+// @Tags Equipo
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} repository.CompanyUser
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/company/users [get]
 func (h *AuthController) ListCompanyUsers(c *gin.Context) {
 	claims, ok := h.authorize(c, "admin")
 	if !ok {
@@ -697,6 +822,21 @@ func (h *AuthController) ListCompanyUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// UpdateCompanyUser godoc
+// @Summary Editar usuario del equipo
+// @Tags Equipo
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Param body body UpdateCompanyUserRequest true "Datos"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Router /auth/company/users/{user_id} [patch]
 func (h *AuthController) UpdateCompanyUser(c *gin.Context) {
 	claims, ok := h.authorize(c, "admin")
 	if !ok {
@@ -760,6 +900,18 @@ func (h *AuthController) UpdateCompanyUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// DeleteCompanyUser godoc
+// @Summary Quitar usuario del equipo
+// @Tags Equipo
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Router /auth/company/users/{user_id} [delete]
 func (h *AuthController) DeleteCompanyUser(c *gin.Context) {
 	claims, ok := h.authorize(c, "admin")
 	if !ok {
@@ -805,6 +957,21 @@ func writeCompanyMemberError(c *gin.Context, err error) {
 	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 }
 
+// BootstrapPlatformAdmin godoc
+// @Summary Crear el primer superadmin
+// @Description Solo si no hay platform_admin. En producción exige header X-Bootstrap-Secret.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param X-Bootstrap-Secret header string false "Secreto de bootstrap"
+// @Param body body BootstrapPlatformAdminRequest true "Superadmin"
+// @Success 201 {object} BootstrapPlatformAdminBody
+// @Failure 400 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/bootstrap/platform-admin [post]
 func (h *AuthController) BootstrapPlatformAdmin(c *gin.Context) {
 	if !h.bootstrapOpen(c) {
 		return
@@ -852,6 +1019,22 @@ func (h *AuthController) BootstrapPlatformAdmin(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID, "email": body.Email, "role": "platform_admin"})
 }
 
+// CreateCompanyAdmin godoc
+// @Summary Crear admin de empresa
+// @Description Superadmin. Envía contraseña temporal por correo.
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateCompanyAdminRequest true "Admin"
+// @Success 201 {object} TempPasswordCreatedBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Failure 503 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/company-admins [post]
 func (h *AuthController) CreateCompanyAdmin(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -937,6 +1120,19 @@ func (h *AuthController) CreateCompanyAdmin(c *gin.Context) {
 	})
 }
 
+// FirstPasswordChange godoc
+// @Summary Cambiar contraseña temporal
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param body body FirstPasswordChangeRequest true "Claves"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 429 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/password/first-change [post]
 func (h *AuthController) FirstPasswordChange(c *gin.Context) {
 	var body firstPasswordChangeBody
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -992,6 +1188,16 @@ func (h *AuthController) FirstPasswordChange(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ListCompanies godoc
+// @Summary Listar empresas
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} repository.Company
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/companies [get]
 func (h *AuthController) ListCompanies(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
@@ -1004,6 +1210,22 @@ func (h *AuthController) ListCompanies(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// UpdateCompany godoc
+// @Summary Editar empresa
+// @Description Superadmin. Al activar una solicitud pendiente envía la clave temporal al contacto.
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID de empresa"
+// @Param body body UpdateCompanyRequest true "Cambios"
+// @Success 200 {object} CompanyActivatedBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/companies/{id} [patch]
 func (h *AuthController) UpdateCompany(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -1142,6 +1364,18 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 	})
 }
 
+// DeleteCompany godoc
+// @Summary Borrar empresa
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "ID de empresa"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Router /auth/platform/companies/{id} [delete]
 func (h *AuthController) DeleteCompany(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
@@ -1172,6 +1406,22 @@ type updatePlatformAdminBody struct {
 	IsActive *bool `json:"is_active"`
 }
 
+// CreatePlatformAdmin godoc
+// @Summary Crear superadmin
+// @Description Envía contraseña temporal por correo.
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreatePlatformAdminRequest true "Superadmin"
+// @Success 201 {object} TempPasswordCreatedBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Failure 503 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/admins [post]
 func (h *AuthController) CreatePlatformAdmin(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -1244,6 +1494,21 @@ func (h *AuthController) CreatePlatformAdmin(c *gin.Context) {
 	})
 }
 
+// UpdatePlatformAdmin godoc
+// @Summary Activar o desactivar superadmin
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Param body body UpdatePlatformAdminRequest true "Estado"
+// @Success 200 {object} OKSignedOutBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Router /auth/platform/admins/{user_id} [patch]
 func (h *AuthController) UpdatePlatformAdmin(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -1282,6 +1547,19 @@ func (h *AuthController) UpdatePlatformAdmin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "signed_out": userID == claims.UserID && !*body.IsActive})
 }
 
+// DeletePlatformAdmin godoc
+// @Summary Borrar superadmin
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Success 200 {object} OKSignedOutBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Router /auth/platform/admins/{user_id} [delete]
 func (h *AuthController) DeletePlatformAdmin(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -1312,6 +1590,16 @@ func (h *AuthController) DeletePlatformAdmin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "signed_out": userID == claims.UserID})
 }
 
+// ListPlatformAdmins godoc
+// @Summary Listar superadmins
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} repository.PlatformAdmin
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/admins [get]
 func (h *AuthController) ListPlatformAdmins(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
@@ -1324,6 +1612,16 @@ func (h *AuthController) ListPlatformAdmins(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// ListCompanyAdmins godoc
+// @Summary Listar admins de empresa
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} repository.CompanyAdmin
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/company-admins [get]
 func (h *AuthController) ListCompanyAdmins(c *gin.Context) {
 	if _, ok := h.authorize(c, "platform_admin"); !ok {
 		return
@@ -1336,6 +1634,21 @@ func (h *AuthController) ListCompanyAdmins(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// UpdateCompanyAdmin godoc
+// @Summary Editar admin de empresa
+// @Tags Plataforma
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Param body body UpdateCompanyAdminRequest true "Datos o solo is_active"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 409 {object} ErrorBody
+// @Router /auth/platform/company-admins/{user_id} [patch]
 func (h *AuthController) UpdateCompanyAdmin(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -1409,6 +1722,21 @@ func (h *AuthController) UpdateCompanyAdmin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ResetCompanyAdminPassword godoc
+// @Summary Resetear clave de admin de empresa
+// @Description Envía una contraseña temporal por correo y cierra sesiones.
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Success 200 {object} TempPasswordCreatedBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Failure 503 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /auth/platform/company-admins/{user_id}/reset-password [post]
 func (h *AuthController) ResetCompanyAdminPassword(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -1463,6 +1791,18 @@ func (h *AuthController) ResetCompanyAdminPassword(c *gin.Context) {
 	})
 }
 
+// DeleteCompanyAdmin godoc
+// @Summary Borrar admin de empresa
+// @Tags Plataforma
+// @Produce json
+// @Security BearerAuth
+// @Param user_id path int true "ID de usuario"
+// @Success 200 {object} OKBody
+// @Failure 400 {object} ErrorBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 404 {object} ErrorBody
+// @Router /auth/platform/company-admins/{user_id} [delete]
 func (h *AuthController) DeleteCompanyAdmin(c *gin.Context) {
 	claims, ok := h.authorize(c, "platform_admin")
 	if !ok {
@@ -1537,6 +1877,16 @@ func (h *AuthController) writeSession(c *gin.Context, userID, companyID int64, e
 	c.JSON(http.StatusOK, tokenResponse(token, h.JWTTTL))
 }
 
+// Refresh godoc
+// @Summary Renovar JWT
+// @Description Cookie httponly flowpay_refresh. Exige Origin del mismo sitio.
+// @Tags Auth
+// @Produce json
+// @Success 200 {object} TokenBody
+// @Failure 401 {object} ErrorBody
+// @Failure 403 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /api/auth/refresh [post]
 func (h *AuthController) Refresh(c *gin.Context) {
 	if !session.SameSiteOrigin(c.Request) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "origen no permitido"})
@@ -1603,6 +1953,15 @@ func (h *AuthController) Refresh(c *gin.Context) {
 	c.JSON(http.StatusOK, tokenResponse(token, h.JWTTTL))
 }
 
+// Logout godoc
+// @Summary Cerrar sesión
+// @Description Invalida refresh y access tokens del usuario. Exige Origin del mismo sitio.
+// @Tags Auth
+// @Produce json
+// @Success 200 {object} OKBody
+// @Failure 403 {object} ErrorBody
+// @Failure 500 {object} ErrorBody
+// @Router /api/auth/logout [post]
 func (h *AuthController) Logout(c *gin.Context) {
 	if !session.SameSiteOrigin(c.Request) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "origen no permitido"})

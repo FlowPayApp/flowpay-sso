@@ -1,0 +1,2017 @@
+basePath: /
+definitions:
+  controller.BootstrapPlatformAdminBody:
+    properties:
+      email:
+        type: string
+      role:
+        example: platform_admin
+        type: string
+      user_id:
+        type: integer
+    type: object
+  controller.BootstrapPlatformAdminRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+    type: object
+  controller.CompanyActivatedBody:
+    properties:
+      email:
+        type: string
+      ok:
+        type: boolean
+      password_sent:
+        type: boolean
+    type: object
+  controller.CreateClientRequest:
+    properties:
+      address:
+        type: string
+      assigned_to:
+        type: integer
+      branch_name:
+        type: string
+      client_code:
+        type: string
+      email:
+        type: string
+      name:
+        type: string
+      payment_terms:
+        type: string
+      phone:
+        type: string
+    type: object
+  controller.CreateCompanyAdminRequest:
+    properties:
+      company_id:
+        type: integer
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+    type: object
+  controller.CreateCompanyBody:
+    properties:
+      company_id:
+        type: integer
+    type: object
+  controller.CreateCompanyRequest:
+    properties:
+      name:
+        type: string
+    type: object
+  controller.CreateCompanyUserBody:
+    properties:
+      company_id:
+        type: integer
+      role:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  controller.CreateCompanyUserRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+      role:
+        example: member
+        type: string
+    type: object
+  controller.CreateCompanyWithAdminBody:
+    properties:
+      admin_user_id:
+        type: integer
+      company_id:
+        type: integer
+    type: object
+  controller.CreateCompanyWithAdminRequest:
+    properties:
+      admin_email:
+        type: string
+      admin_name:
+        type: string
+      admin_password:
+        type: string
+      company_name:
+        type: string
+    type: object
+  controller.CreatePlatformAdminRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+    type: object
+  controller.CreatedIDBody:
+    properties:
+      id:
+        type: integer
+    type: object
+  controller.ErrorBody:
+    properties:
+      error:
+        example: json inválido
+        type: string
+    type: object
+  controller.FirstPasswordChangeRequest:
+    properties:
+      email:
+        type: string
+      new_password:
+        type: string
+      password:
+        type: string
+    type: object
+  controller.HealthBody:
+    properties:
+      service:
+        example: flowpay-sso
+        type: string
+      status:
+        example: ok
+        type: string
+    type: object
+  controller.ImportDistributorRowsRequest:
+    properties:
+      filename:
+        type: string
+      rows:
+        items:
+          items:
+            type: string
+          type: array
+        type: array
+    type: object
+  controller.LoginRequest:
+    properties:
+      email:
+        example: ana@distribuidora.cl
+        type: string
+      password:
+        type: string
+    type: object
+  controller.LoginResult:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      mfa_required:
+        type: boolean
+      mfa_setup:
+        type: boolean
+      mfa_token:
+        type: string
+      otpauth_url:
+        type: string
+      secret:
+        type: string
+      token_type:
+        type: string
+    type: object
+  controller.MFARequest:
+    properties:
+      code:
+        example: "123456"
+        type: string
+      mfa_token:
+        type: string
+    type: object
+  controller.MessageBody:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+      requires_password_change:
+        type: boolean
+    type: object
+  controller.OKBody:
+    properties:
+      ok:
+        example: true
+        type: boolean
+    type: object
+  controller.OKSignedOutBody:
+    properties:
+      ok:
+        type: boolean
+      signed_out:
+        type: boolean
+    type: object
+  controller.PatchClientRequest:
+    properties:
+      address:
+        type: string
+      assigned_to:
+        type: integer
+      branch_name:
+        type: string
+      client_code:
+        type: string
+      email:
+        type: string
+      followup_channel:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      payment_terms:
+        type: string
+      phone:
+        type: string
+    type: object
+  controller.ProfileBody:
+    properties:
+      company_id:
+        type: integer
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      role:
+        example: admin
+        type: string
+      user_id:
+        type: integer
+    type: object
+  controller.RegisterAcceptedBody:
+    properties:
+      message:
+        type: string
+      pending:
+        example: true
+        type: boolean
+    type: object
+  controller.RegisterRequest:
+    properties:
+      company_name:
+        example: Distribuidora Sur
+        type: string
+      email:
+        example: ana@distribuidora.cl
+        type: string
+      name:
+        example: Ana Pérez
+        type: string
+      password:
+        type: string
+      phone:
+        example: "+56912345678"
+        type: string
+      plan:
+        example: crecimiento
+        type: string
+    type: object
+  controller.TempPasswordCreatedBody:
+    properties:
+      company_id:
+        type: integer
+      must_change_password:
+        type: boolean
+      password_sent:
+        type: boolean
+      role:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  controller.TokenBody:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        example: 900
+        type: integer
+      token_type:
+        example: Bearer
+        type: string
+    type: object
+  controller.UpdateCompanyAdminRequest:
+    properties:
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+    type: object
+  controller.UpdateCompanyRequest:
+    properties:
+      allow_email:
+        type: boolean
+      allow_whatsapp:
+        type: boolean
+      clear_commission_override:
+        type: boolean
+      clear_price_override:
+        type: boolean
+      commission_percent_override:
+        type: number
+      is_active:
+        type: boolean
+      name:
+        type: string
+      price_clp_override:
+        type: integer
+      requested_plan:
+        type: string
+    type: object
+  controller.UpdateCompanyUserRequest:
+    properties:
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      role:
+        type: string
+    type: object
+  controller.UpdateOwnProfileRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+    type: object
+  controller.UpdatePlanRequest:
+    properties:
+      commission_percent:
+        type: number
+      detail:
+        type: string
+      features:
+        items:
+          type: string
+        type: array
+      highlight:
+        type: boolean
+      label:
+        type: string
+      price_clp:
+        type: integer
+    type: object
+  controller.UpdatePlatformAdminRequest:
+    properties:
+      is_active:
+        type: boolean
+    type: object
+  repository.Company:
+    properties:
+      admin_count:
+        type: integer
+      allow_email:
+        type: boolean
+      allow_whatsapp:
+        type: boolean
+      approved:
+        type: boolean
+      client_count:
+        type: integer
+      commission_percent_override:
+        type: number
+      contact_email:
+        type: string
+      contact_name:
+        type: string
+      contact_phone:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      name:
+        type: string
+      price_clp_override:
+        type: integer
+      requested_plan:
+        type: string
+    type: object
+  repository.CompanyAdmin:
+    properties:
+      company_id:
+        type: integer
+      company_name:
+        type: string
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  repository.CompanyUser:
+    properties:
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  repository.PlatformAdmin:
+    properties:
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  service.ClientDTO:
+    properties:
+      address:
+        type: string
+      assigned_to:
+        type: integer
+      branch_name:
+        type: string
+      charge_count:
+        type: integer
+      client_code:
+        type: string
+      company_id:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      email:
+        type: string
+      external_code:
+        type: string
+      followup_channel:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      name:
+        type: string
+      overdue_count:
+        type: integer
+      payment_terms:
+        type: string
+      phone:
+        type: string
+      risk_level:
+        type: string
+      seller_name:
+        type: string
+      seller_user_id:
+        type: integer
+      total_owed:
+        type: number
+    type: object
+  service.ClientImportBatchDetail:
+    properties:
+      created_at:
+        type: string
+      created_count:
+        type: integer
+      error_count:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/service.ImportDistributorErr'
+        type: array
+      filename:
+        type: string
+      id:
+        type: integer
+      source:
+        type: string
+      updated_count:
+        type: integer
+    type: object
+  service.ClientImportBatchListItem:
+    properties:
+      created_at:
+        type: string
+      created_count:
+        type: integer
+      error_count:
+        type: integer
+      filename:
+        type: string
+      id:
+        type: integer
+      source:
+        type: string
+      updated_count:
+        type: integer
+    type: object
+  service.ImportDistributorErr:
+    properties:
+      line:
+        type: integer
+      message:
+        type: string
+    type: object
+  service.ImportDistributorResult:
+    properties:
+      created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/service.ImportDistributorErr'
+        type: array
+      updated:
+        type: integer
+    type: object
+  signup.Plan:
+    properties:
+      commission_percent:
+        type: number
+      detail:
+        type: string
+      features:
+        items:
+          type: string
+        type: array
+      highlight:
+        type: boolean
+      id:
+        type: string
+      label:
+        type: string
+      period:
+        type: string
+      price:
+        type: string
+      price_clp:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: 'Identidad de FlowPay: registro, login (MFA en superadmin), JWT, equipos,
+    empresas y cartera de clientes.'
+  title: FlowPay SSO API
+  version: "1.0"
+paths:
+  /api/auth/logout:
+    post:
+      description: Invalida refresh y access tokens del usuario. Exige Origin del
+        mismo sitio.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      summary: Cerrar sesión
+      tags:
+      - Auth
+  /api/auth/refresh:
+    post:
+      description: Cookie httponly flowpay_refresh. Exige Origin del mismo sitio.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.TokenBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      summary: Renovar JWT
+      tags:
+      - Auth
+  /api/clients:
+    get:
+      description: Un member solo ve los clientes asignados a él.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/service.ClientDTO'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Listar clientes
+      tags:
+      - Clientes
+    post:
+      consumes:
+      - application/json
+      description: Un member queda asignado a sí mismo. Un admin puede enviar assigned_to.
+      parameters:
+      - description: Cliente
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateClientRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.CreatedIDBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Crear cliente
+      tags:
+      - Clientes
+  /api/clients/{id}:
+    delete:
+      description: Solo admin de empresa.
+      parameters:
+      - description: ID de cliente
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Borrar cliente
+      tags:
+      - Clientes
+    get:
+      parameters:
+      - description: ID de cliente
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ClientDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Ver cliente
+      tags:
+      - Clientes
+    patch:
+      consumes:
+      - application/json
+      description: El vendedor no puede cambiar is_active ni assigned_to.
+      parameters:
+      - description: ID de cliente
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Campos a cambiar
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.PatchClientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Actualizar cliente
+      tags:
+      - Clientes
+  /api/clients/import-batches:
+    get:
+      description: Solo admin de empresa.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/service.ClientImportBatchListItem'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Historial de importaciones
+      tags:
+      - Clientes
+  /api/clients/import-batches/{id}:
+    get:
+      description: Solo admin de empresa.
+      parameters:
+      - description: ID del lote
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ClientImportBatchDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Detalle de una importación
+      tags:
+      - Clientes
+  /api/clients/import-distributor-rows:
+    post:
+      consumes:
+      - application/json
+      description: 'Solo admin. Primera fila: CODIGO, SUCURSAL, NOMBRE, DIRECCION,
+        TELEFONO y MPAGO (o CPAGO).'
+      parameters:
+      - description: Filas de Excel
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.ImportDistributorRowsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ImportDistributorResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Importar clientes desde planilla
+      tags:
+      - Clientes
+  /auth/bootstrap/platform-admin:
+    post:
+      consumes:
+      - application/json
+      description: Solo si no hay platform_admin. En producción exige header X-Bootstrap-Secret.
+      parameters:
+      - description: Secreto de bootstrap
+        in: header
+        name: X-Bootstrap-Secret
+        type: string
+      - description: Superadmin
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.BootstrapPlatformAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.BootstrapPlatformAdminBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      summary: Crear el primer superadmin
+      tags:
+      - Auth
+  /auth/company/users:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/repository.CompanyUser'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Listar equipo
+      tags:
+      - Equipo
+    post:
+      consumes:
+      - application/json
+      description: 'Admin de empresa. Role: admin o member (por defecto member).'
+      parameters:
+      - description: Usuario
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateCompanyUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.CreateCompanyUserBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Crear usuario del equipo
+      tags:
+      - Equipo
+  /auth/company/users/{user_id}:
+    delete:
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Quitar usuario del equipo
+      tags:
+      - Equipo
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Datos
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateCompanyUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Editar usuario del equipo
+      tags:
+      - Equipo
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Usuarios de empresa reciben JWT y cookie de refresh. Un superadmin
+        recibe MFA (setup o código).
+      parameters:
+      - description: Credenciales
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.LoginResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.MessageBody'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      summary: Iniciar sesión
+      tags:
+      - Auth
+  /auth/login/mfa:
+    post:
+      consumes:
+      - application/json
+      description: Tras /auth/login de un superadmin. En el primer ingreso también
+        enrola el secreto.
+      parameters:
+      - description: Token MFA y código
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.MFARequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.TokenBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      summary: Completar login con TOTP
+      tags:
+      - Auth
+  /auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.ProfileBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Perfil del token
+      tags:
+      - Perfil
+    patch:
+      consumes:
+      - application/json
+      description: Si cambia la contraseña, se cierran las demás sesiones.
+      parameters:
+      - description: Perfil
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateOwnProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Actualizar perfil propio
+      tags:
+      - Perfil
+  /auth/password/first-change:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Claves
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.FirstPasswordChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      summary: Cambiar contraseña temporal
+      tags:
+      - Auth
+  /auth/plans:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/signup.Plan'
+            type: array
+      summary: Listar planes públicos
+      tags:
+      - Auth
+  /auth/platform/admins:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/repository.PlatformAdmin'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Listar superadmins
+      tags:
+      - Plataforma
+    post:
+      consumes:
+      - application/json
+      description: Envía contraseña temporal por correo.
+      parameters:
+      - description: Superadmin
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreatePlatformAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.TempPasswordCreatedBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Crear superadmin
+      tags:
+      - Plataforma
+  /auth/platform/admins/{user_id}:
+    delete:
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKSignedOutBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Borrar superadmin
+      tags:
+      - Plataforma
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Estado
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdatePlatformAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKSignedOutBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Activar o desactivar superadmin
+      tags:
+      - Plataforma
+  /auth/platform/admins/{user_id}/reset-mfa:
+    post:
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Resetear TOTP de otro superadmin
+      tags:
+      - Plataforma
+  /auth/platform/companies:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/repository.Company'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Listar empresas
+      tags:
+      - Plataforma
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Nombre
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateCompanyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.CreateCompanyBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Crear empresa
+      tags:
+      - Plataforma
+  /auth/platform/companies-with-admin:
+    post:
+      consumes:
+      - application/json
+      description: Superadmin. Si solo llega company_name, crea la empresa sin usuario.
+      parameters:
+      - description: Empresa y admin
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateCompanyWithAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.CreateCompanyWithAdminBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Crear empresa con admin
+      tags:
+      - Plataforma
+  /auth/platform/companies/{id}:
+    delete:
+      parameters:
+      - description: ID de empresa
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Borrar empresa
+      tags:
+      - Plataforma
+    patch:
+      consumes:
+      - application/json
+      description: Superadmin. Al activar una solicitud pendiente envía la clave temporal
+        al contacto.
+      parameters:
+      - description: ID de empresa
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Cambios
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateCompanyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.CompanyActivatedBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Editar empresa
+      tags:
+      - Plataforma
+  /auth/platform/company-admins:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/repository.CompanyAdmin'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Listar admins de empresa
+      tags:
+      - Plataforma
+    post:
+      consumes:
+      - application/json
+      description: Superadmin. Envía contraseña temporal por correo.
+      parameters:
+      - description: Admin
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateCompanyAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.TempPasswordCreatedBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Crear admin de empresa
+      tags:
+      - Plataforma
+  /auth/platform/company-admins/{user_id}:
+    delete:
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Borrar admin de empresa
+      tags:
+      - Plataforma
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Datos o solo is_active
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateCompanyAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.OKBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Editar admin de empresa
+      tags:
+      - Plataforma
+  /auth/platform/company-admins/{user_id}/reset-password:
+    post:
+      description: Envía una contraseña temporal por correo y cierra sesiones.
+      parameters:
+      - description: ID de usuario
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.TempPasswordCreatedBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Resetear clave de admin de empresa
+      tags:
+      - Plataforma
+  /auth/platform/plans/{id}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID del plan
+        example: crecimiento
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Plan
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdatePlanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/signup.Plan'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Editar un plan
+      tags:
+      - Plataforma
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Crea una empresa pendiente. No entrega sesión. Notifica a los superadmins.
+      parameters:
+      - description: Datos de la solicitud
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/controller.RegisterAcceptedBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/controller.ErrorBody'
+      summary: Solicitar cuenta
+      tags:
+      - Auth
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controller.HealthBody'
+      summary: Estado del servicio
+      tags:
+      - Salud
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT de acceso. Enviar: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

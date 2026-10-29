@@ -14,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/flowpay/flowpay-sso/internal/config"
 	"github.com/flowpay/flowpay-sso/internal/controller"
@@ -21,8 +23,18 @@ import (
 	"github.com/flowpay/flowpay-sso/internal/repository"
 	"github.com/flowpay/flowpay-sso/internal/routes"
 	"github.com/flowpay/flowpay-sso/internal/service"
+
+	_ "github.com/flowpay/flowpay-sso/cmd/server/docs"
 )
 
+// @title FlowPay SSO API
+// @version 1.0
+// @description Identidad de FlowPay: registro, login (MFA en superadmin), JWT, equipos, empresas y cartera de clientes.
+// @BasePath /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT de acceso. Enviar: Bearer {token}
 func main() {
 	cfg := config.Load()
 	if len(strings.TrimSpace(cfg.JWTSecret)) < 16 {
@@ -90,6 +102,8 @@ func main() {
 	}))
 
 	routes.Register(r, auth, clients, cfg.JWTSecret)
+
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	printStartupStatus(db, cfg.Addr, cfg.DSN, cfg.JWTSecret)
 	if err := r.Run(cfg.Addr); err != nil {
