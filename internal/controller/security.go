@@ -196,7 +196,7 @@ func (h *AuthController) tooMany(c *gin.Context) {
 
 func (h *AuthController) loginLimited(c *gin.Context, email string) bool {
 	now := time.Now()
-	if h.attempts.Blocked("login:ip:"+c.ClientIP(), loginIPMax, attemptWindow, now) ||
+	if h.attempts.Blocked("login:ip:"+audit.RequestIP(c), loginIPMax, attemptWindow, now) ||
 		h.attempts.Blocked("login:email:"+email, loginEmailMax, attemptWindow, now) {
 		h.tooMany(c)
 		return true
@@ -204,18 +204,12 @@ func (h *AuthController) loginLimited(c *gin.Context, email string) bool {
 	return false
 }
 
-func (h *AuthController) noteLoginFailure(c *gin.Context, email string) {
-	ip := c.ClientIP()
+func (h *AuthController) noteLoginFailure(c *gin.Context, email, code, reason string, userID int64, name string) {
+	ip := audit.RequestIP(c)
 	now := time.Now()
 	_, tripped := h.attempts.Hit("login:email:"+email, loginAlertAt, attemptWindow, now)
 	h.attempts.Hit("login:ip:"+ip, loginIPMax, attemptWindow, now)
-	h.audit(c, audit.Event{
-		Domain:  audit.DomainAuth,
-		Action:  audit.ActionLoginFailed,
-		Outcome: audit.OutcomeFailure,
-		Summary: "Intento de ingreso rechazado",
-		Meta:    map[string]any{"email": audit.MaskEmail(email)},
-	})
+	h.audit(c, loginRejection(email, code, reason, audit.OutcomeFailure, userID, 0, name))
 	if tripped {
 		h.alertAdmins("Muchos intentos de ingreso", "El correo "+email+" falló varias veces al entrar. No se incluye la contraseña.")
 	}
@@ -225,9 +219,42 @@ func (h *AuthController) noteLoginFailure(c *gin.Context, email string) {
 	}
 }
 
+func (h *AuthController) noteLoginDenied(c *gin.Context, email, code, reason string, userID, companyID int64, name string) {
+	h.noteLoginRejected(c, email, code, reason, audit.OutcomeDenied, userID, companyID, name)
+}
+
+func (h *AuthController) noteLoginRejected(c *gin.Context, email, code, reason, outcome string, userID, companyID int64, name string) {
+	h.audit(c, loginRejection(email, code, reason, outcome, userID, companyID, name))
+}
+
+func loginRejection(email, code, reason, outcome string, userID, companyID int64, name string) audit.Event {
+	who := strings.TrimSpace(name)
+	if who == "" {
+		who = audit.MaskEmail(email)
+	}
+	verb := "Intento de ingreso de "
+	if outcome == audit.OutcomeDenied {
+		verb = "Ingreso rechazado de "
+	}
+	event := audit.Event{
+		Domain:    audit.DomainAuth,
+		Action:    audit.ActionLoginFailed,
+		Outcome:   outcome,
+		CompanyID: companyID,
+		Summary:   verb + who + ": " + reason,
+		Meta:      map[string]any{"email": audit.MaskEmail(email), "code": code, "reason": reason},
+	}
+	if userID > 0 {
+		event.ActorID = userID
+		event.TargetType = audit.TargetUser
+		event.TargetID = audit.ID(userID)
+	}
+	return event
+}
+
 func (h *AuthController) publicLimited(c *gin.Context, kind, email string) bool {
 	now := time.Now()
-	ip := c.ClientIP()
+	ip := audit.RequestIP(c)
 	if h.attempts.Blocked(kind+":ip:"+ip, publicIPMax, attemptWindow, now) ||
 		h.attempts.Blocked(kind+":email:"+email, publicEmailMax, attemptWindow, now) {
 		h.tooMany(c)
@@ -242,7 +269,7 @@ func (h *AuthController) publicLimited(c *gin.Context, kind, email string) bool 
 }
 
 func (h *AuthController) noteAccessBlocked(c *gin.Context, kind, email string) {
-	if !audit.Once("access-blocked:"+kind+":"+c.ClientIP(), attemptWindow) {
+	if !audit.Once("access-blocked:"+kind+":"+audit.RequestIP(c), attemptWindow) {
 		return
 	}
 	summary := "Bloqueó intentos por exceso"
@@ -317,7 +344,7 @@ func (h *AuthController) bootstrapOpen(c *gin.Context) bool {
 }
 
 func (h *AuthController) noteBootstrapRejected(c *gin.Context, reason string) {
-	if !audit.Once("bootstrap-rejected:"+c.ClientIP(), attemptWindow) {
+	if !audit.Once("bootstrap-rejected:"+audit.RequestIP(c), attemptWindow) {
 		return
 	}
 	h.audit(c, audit.Event{
@@ -386,15 +413,24 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 	body.Token = strings.TrimSpace(body.Token)
 	body.Code = strings.TrimSpace(body.Code)
 	now := time.Now()
-	if h.attempts.Blocked("mfa:ip:"+c.ClientIP(), publicIPMax, attemptWindow, now) {
+	if h.attempts.Blocked("mfa:ip:"+audit.RequestIP(c), publicIPMax, attemptWindow, now) {
 		h.tooMany(c)
 		return
 	}
 	item, ok := h.pending.get(body.Token)
 	if !ok {
-		_, tripped := h.attempts.Hit("mfa:ip:"+c.ClientIP(), publicIPMax, attemptWindow, now)
+		_, tripped := h.attempts.Hit("mfa:ip:"+audit.RequestIP(c), publicIPMax, attemptWindow, now)
 		if tripped {
 			h.noteAccessBlocked(c, "mfa", "")
+		}
+		if audit.Once("mfa-expired:"+audit.RequestIP(c), attemptWindow) {
+			h.audit(c, audit.Event{
+				Domain:  audit.DomainAuth,
+				Action:  audit.ActionMFAFailed,
+				Outcome: audit.OutcomeFailure,
+				Summary: "Código de segundo factor rechazado: el intento ya no está vigente",
+				Meta:    map[string]any{"code": "mfa_expired", "reason": "el intento ya no está vigente"},
+			})
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "código inválido"})
 		return
@@ -404,18 +440,40 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 		u, err := h.Repo.GetUserByID(c.Request.Context(), item.UserID)
 		if err != nil || strings.TrimSpace(u.TotpSecret) == "" {
 			h.pending.consume(body.Token)
+			h.audit(c, audit.Event{
+				Domain:     audit.DomainAuth,
+				Action:     audit.ActionMFAFailed,
+				Outcome:    audit.OutcomeFailure,
+				ActorID:    item.UserID,
+				CompanyID:  item.CompanyID,
+				TargetType: audit.TargetUser,
+				TargetID:   audit.ID(item.UserID),
+				Summary:    "Código de segundo factor rechazado: el segundo factor no está configurado",
+				Meta:       map[string]any{"code": "mfa_unconfigured", "reason": "el segundo factor no está configurado"},
+			})
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "código inválido"})
 			return
 		}
 		secret, err = secretbox.Open(h.dataKey(), u.TotpSecret)
 		if err != nil {
+			h.audit(c, audit.Event{
+				Domain:     audit.DomainAuth,
+				Action:     audit.ActionMFAFailed,
+				Outcome:    audit.OutcomeFailure,
+				ActorID:    item.UserID,
+				CompanyID:  item.CompanyID,
+				TargetType: audit.TargetUser,
+				TargetID:   audit.ID(item.UserID),
+				Summary:    "Código de segundo factor rechazado: no se pudo leer el segundo factor",
+				Meta:       map[string]any{"code": "mfa_unreadable", "reason": "no se pudo leer el segundo factor"},
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo verificar el código"})
 			return
 		}
 	}
 	if !totp.Verify(secret, body.Code, now) {
 		locked := h.pending.fail(body.Token)
-		_, tripped := h.attempts.Hit("mfa:ip:"+c.ClientIP(), publicIPMax, attemptWindow, now)
+		_, tripped := h.attempts.Hit("mfa:ip:"+audit.RequestIP(c), publicIPMax, attemptWindow, now)
 		h.audit(c, audit.Event{
 			Domain:     audit.DomainAuth,
 			Action:     audit.ActionMFAFailed,
@@ -424,7 +482,8 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 			CompanyID:  item.CompanyID,
 			TargetType: audit.TargetUser,
 			TargetID:   audit.ID(item.UserID),
-			Summary:    "Código de segundo factor rechazado",
+			Summary:    "Código de segundo factor rechazado: el código no coincide",
+			Meta:       map[string]any{"code": "mfa_wrong_code", "reason": "el código no coincide"},
 		})
 		if locked || tripped {
 			h.noteAccessBlocked(c, "mfa", item.Email)
@@ -445,7 +504,7 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 		h.auditUser(c, &authjwt.AccessClaims{UserID: item.UserID, CompanyID: item.CompanyID, Role: item.Role}, audit.ActionMFAEnrolled, "Enroló el segundo factor", item.UserID, item.CompanyID, nil)
 	}
 	h.pending.consume(body.Token)
-	h.writeSession(c, item.UserID, item.CompanyID, item.Email, item.Role)
+	h.writeSession(c, item.UserID, item.CompanyID, item.Email, item.Name, item.Role)
 }
 
 func (h *AuthController) ResetPlatformMFA(c *gin.Context) {
