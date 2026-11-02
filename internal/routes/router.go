@@ -24,6 +24,8 @@ func Register(r *gin.Engine, auth *controller.AuthController, clients *controlle
 	r.GET("/auth/me", auth.GetProfile)
 	r.PATCH("/auth/me", auth.UpdateProfile)
 	r.POST("/auth/password/first-change", auth.FirstPasswordChange)
+	r.POST("/auth/password/forgot", auth.RequestPasswordReset)
+	r.POST("/auth/password/reset", auth.ConfirmPasswordReset)
 	r.POST("/auth/bootstrap/platform-admin", auth.BootstrapPlatformAdmin)
 	r.POST("/auth/company/users", auth.CreateCompanyUser)
 	r.GET("/auth/company/users", auth.ListCompanyUsers)

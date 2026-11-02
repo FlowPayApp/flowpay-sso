@@ -255,6 +255,10 @@ func (h *AuthController) noteAccessBlocked(c *gin.Context, kind, email string) {
 		summary = "Bloqueó el segundo factor por demasiados intentos"
 	case "first-change":
 		summary = "Bloqueó el cambio de clave por demasiados intentos"
+	case "password-forgot":
+		summary = "Bloqueó la recuperación de clave por demasiados intentos"
+	case "password-reset":
+		summary = "Bloqueó el restablecimiento de clave por demasiados intentos"
 	}
 	meta := map[string]any{"kind": kind}
 	if strings.TrimSpace(email) != "" {

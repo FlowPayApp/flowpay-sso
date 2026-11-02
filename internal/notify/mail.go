@@ -23,6 +23,11 @@ func (s SMTP) enabled() bool {
 	return strings.TrimSpace(s.Host) != "" && strings.TrimSpace(s.Username) != "" && strings.TrimSpace(s.Password) != "" && strings.TrimSpace(s.From) != ""
 }
 
+// Configured indica si hay credenciales para enviar correo.
+func (s SMTP) Configured() bool {
+	return s.enabled()
+}
+
 // SignupNotice datos para contactar a quien pidió una cuenta.
 type SignupNotice struct {
 	CompanyName string
@@ -98,6 +103,39 @@ func (s SMTP) SendTemporaryPassword(to, name, password string) error {
 	})
 	if err != nil {
 		log.Printf("[FlowPay] no se pudo enviar la clave temporal a %s: %v", to, err)
+	}
+	return err
+}
+
+// SendResetCode entrega el código de un solo uso para restablecer la contraseña.
+func (s SMTP) SendResetCode(to, name, code string) error {
+	to = strings.TrimSpace(strings.ToLower(to))
+	if to == "" {
+		return fmt.Errorf("sin destinatario")
+	}
+	if !s.enabled() {
+		log.Printf("[FlowPay] no se envió el código de recuperación: SMTP sin configurar")
+		return fmt.Errorf("smtp sin configurar")
+	}
+	who := strings.TrimSpace(name)
+	greeting := "Estimado,"
+	if who != "" && who != to {
+		greeting = "Estimado " + who + ","
+	}
+	err := s.send([]string{to}, "Código para restablecer su contraseña de GeldFlus", letter{
+		Kicker:      "Recuperación de acceso",
+		Greeting:    greeting,
+		Secret:      code,
+		SecretLabel: "Código de verificación",
+		SecretNote:  "Vence en 15 minutos y sirve una sola vez.",
+		Lines: []string{
+			"Recibimos una solicitud para restablecer la contraseña de su cuenta en GeldFlus.",
+			"Si usted no la pidió, ignore este mensaje. Su contraseña no cambia.",
+			"No reenvíe este mensaje.",
+		},
+	})
+	if err != nil {
+		log.Printf("[FlowPay] no se pudo enviar el código de recuperación a %s: %v", to, err)
 	}
 	return err
 }
