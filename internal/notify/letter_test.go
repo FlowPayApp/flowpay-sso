@@ -25,8 +25,16 @@ func TestLetterIsFormalAndEscaped(t *testing.T) {
 		}
 	}
 	plain := note.plain()
-	if !strings.Contains(plain, "Saludos cordiales,") || !strings.Contains(plain, "clave<1>") {
+	if !strings.Contains(plain, "Saludos cordiales,") || !strings.Contains(plain, "Clave temporal: clave<1>") {
 		t.Fatal("el texto plano no trae la firma o la clave")
+	}
+	code := letter{Secret: "123456", SecretLabel: "Código de verificación", SecretNote: "Vence en 15 minutos."}
+	codeHTML, err := code.html()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(codeHTML, "Código de verificación") || !strings.Contains(codeHTML, "Vence en 15 minutos.") {
+		t.Fatal("el código de recuperación no trae su etiqueta")
 	}
 	raw := SMTP{From: "contacto@geldflus.com"}.writeMessage([]string{"a@b.c"}, "Clave", plain, htmlBody)
 	text := string(raw)

@@ -97,6 +97,13 @@ func (db *DB) EnsureAuthSessions(ctx context.Context) error {
 			expires_at TIMESTAMPTZ NOT NULL
 		)`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS password_resets (
+			user_id BIGINT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+			code_hash TEXT NOT NULL,
+			expires_at TIMESTAMPTZ NOT NULL,
+			attempts INT NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := db.ex.ExecContext(ctx, q); err != nil {

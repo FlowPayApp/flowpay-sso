@@ -15,11 +15,27 @@ const (
 )
 
 type letter struct {
-	Kicker   string
-	Greeting string
-	Lines    []string
-	Rows     [][2]string
-	Secret   string
+	Kicker      string
+	Greeting    string
+	Lines       []string
+	Rows        [][2]string
+	Secret      string
+	SecretLabel string
+	SecretNote  string
+}
+
+func (n letter) SecretTitle() string {
+	if strings.TrimSpace(n.SecretLabel) != "" {
+		return n.SecretLabel
+	}
+	return "Clave temporal"
+}
+
+func (n letter) SecretCaption() string {
+	if strings.TrimSpace(n.SecretNote) != "" {
+		return n.SecretNote
+	}
+	return "Cópiela tal cual. Sirve solo para el primer ingreso."
 }
 
 func (n letter) Lead() string {
@@ -90,7 +106,7 @@ func (n letter) plain() string {
 		}
 	}
 	if n.Secret != "" {
-		lines = append(lines, "", "Clave temporal: "+n.Secret)
+		lines = append(lines, "", n.SecretTitle()+": "+n.Secret)
 	}
 	lines = append(lines,
 		"",
@@ -129,9 +145,9 @@ var letterTmpl = template.Must(template.New("letter").Funcs(template.FuncMap{
 {{if .Secret}}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;">
 <tr><td align="center" style="background:#f3faf9;border:1px solid #d5ebe8;border-radius:16px;padding:22px 18px;">
-<p style="margin:0;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:` + brandColor + `;">Clave temporal</p>
+<p style="margin:0;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:` + brandColor + `;">{{.SecretTitle}}</p>
 <p style="margin:12px 0 0;padding:12px 16px;background:#ffffff;border:1px dashed #b7ddd9;border-radius:10px;font-family:Consolas,'Courier New',monospace;font-size:22px;letter-spacing:0.08em;line-height:1.4;color:#1c1917;">{{.Secret}}</p>
-<p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#6b645c;">Cópiela tal cual. Sirve solo para el primer ingreso.</p>
+<p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#6b645c;">{{.SecretCaption}}</p>
 </td></tr>
 </table>
 {{end}}
