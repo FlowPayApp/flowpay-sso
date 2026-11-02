@@ -1730,29 +1730,24 @@ func (h *AuthController) Logout(c *gin.Context) {
 	}
 	raw, _ := c.Cookie(session.RefreshCookie)
 	h.clearRefreshCookie(c)
-	if strings.TrimSpace(raw) == "" {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
-	found, err := h.Repo.SessionUserByHash(c.Request.Context(), session.Hash(raw))
+	event := audit.Finish(c.Request.Context(), audit.Event{
+		Domain:     audit.DomainAuth,
+		Action:     audit.ActionLogout,
+		TargetType: audit.TargetUser,
+		Summary:    "Cerró sesión",
+	})
+	_, jtis, err := h.Repo.RevokeAllSessionsByHash(c.Request.Context(), session.Hash(raw), event)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo cerrar la sesión"})
 		return
 	}
-	if found > 0 && !h.revokeUser(c, found) {
-		return
-	}
-	if found > 0 {
-		companyID, _ := h.Repo.CompanyIDForUser(c.Request.Context(), found)
-		h.audit(c, audit.Event{
-			Domain:     audit.DomainAuth,
-			Action:     audit.ActionLogout,
-			ActorID:    found,
-			CompanyID:  companyID,
-			TargetType: audit.TargetUser,
-			TargetID:   audit.ID(found),
-			Summary:    "Cerró sesión",
-		})
+	if len(jtis) > 0 {
+		h.Revoked.Add(jtis, time.Now().Add(h.JWTTTL))
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/flowpay/flowpay-sso/internal/audit"
 )
 
 type RefreshRotate string
@@ -160,6 +162,79 @@ UPDATE auth_sessions SET current_token_hash = $2, last_seen_at = $3 WHERE id = $
 	}
 	out.Status = RefreshOK
 	return out, nil
+}
+
+// RevokeAllSessionsByHash cierra todas las sesiones abiertas de esa cuenta y guarda la auditoría en la misma operación.
+func (db *DB) RevokeAllSessionsByHash(ctx context.Context, tokenHash string, event audit.Event) (int64, []string, error) {
+	rows, err := db.ex.QueryContext(ctx, `
+WITH actor AS (
+  SELECT s.user_id
+  FROM auth_session_tokens t
+  JOIN auth_sessions s ON s.id = t.session_id
+  WHERE t.token_hash = $1
+  LIMIT 1
+),
+revoked AS (
+  UPDATE auth_sessions
+  SET revoked_at = NOW()
+  WHERE user_id IN (SELECT user_id FROM actor)
+    AND revoked_at IS NULL
+  RETURNING id, user_id
+),
+burned AS (
+  INSERT INTO revoked_access_tokens (jti, expires_at)
+  SELECT tok.jti, tok.expires_at
+  FROM session_access_tokens tok
+  JOIN revoked r ON r.id = tok.session_id
+  WHERE tok.expires_at > NOW()
+  ON CONFLICT (jti) DO NOTHING
+  RETURNING jti
+),
+logged AS (
+  INSERT INTO audit_events (
+    service, domain, action, outcome,
+    actor_user_id, actor_role, company_id,
+    target_type, target_id, ip, user_agent, summary, metadata
+  )
+  SELECT
+    $2, $3, $4, $5,
+    a.user_id, $6, (SELECT cu.company_id FROM company_users cu WHERE cu.user_id = a.user_id LIMIT 1),
+    $7, a.user_id::text, $8, $9, $10, '{}'::jsonb
+  FROM actor a
+  RETURNING id
+)
+SELECT a.user_id, b.jti
+FROM actor a
+LEFT JOIN burned b ON TRUE
+LEFT JOIN logged l ON TRUE`,
+		tokenHash,
+		event.Service, event.Domain, event.Action, event.Outcome,
+		event.ActorRole, event.TargetType, event.IP, event.UserAgent, event.Summary,
+	)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	var userID int64
+	var jtis []string
+	seen := map[string]struct{}{}
+	for rows.Next() {
+		var id int64
+		var jti sql.NullString
+		if err := rows.Scan(&id, &jti); err != nil {
+			return 0, nil, err
+		}
+		userID = id
+		if !jti.Valid || jti.String == "" {
+			continue
+		}
+		if _, ok := seen[jti.String]; ok {
+			continue
+		}
+		seen[jti.String] = struct{}{}
+		jtis = append(jtis, jti.String)
+	}
+	return userID, jtis, rows.Err()
 }
 
 func (db *DB) SessionUserByHash(ctx context.Context, tokenHash string) (int64, error) {
