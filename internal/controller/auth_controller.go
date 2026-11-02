@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flowpay/flowpay-sso/internal/audit"
 	"github.com/flowpay/flowpay-sso/internal/authjwt"
 	"github.com/flowpay/flowpay-sso/internal/notify"
 	"github.com/flowpay/flowpay-sso/internal/ratelimit"
@@ -115,6 +116,38 @@ type updateCompanyBody struct {
 	ClearCommissionOverride   *bool    `json:"clear_commission_override"`
 	AllowEmail                *bool    `json:"allow_email"`
 	AllowWhatsApp             *bool    `json:"allow_whatsapp"`
+}
+
+func companyUpdateNote(body updateCompanyBody, base string) (string, map[string]any) {
+	var bits []string
+	meta := map[string]any{}
+	if body.AllowEmail != nil {
+		meta["allow_email"] = *body.AllowEmail
+		if *body.AllowEmail {
+			bits = append(bits, "activó el correo")
+		} else {
+			bits = append(bits, "desactivó el correo")
+		}
+	}
+	if body.AllowWhatsApp != nil {
+		meta["allow_whatsapp"] = *body.AllowWhatsApp
+		if *body.AllowWhatsApp {
+			bits = append(bits, "activó WhatsApp")
+		} else {
+			bits = append(bits, "desactivó WhatsApp")
+		}
+	}
+	if len(bits) == 0 {
+		return base, nil
+	}
+	note := bits[0]
+	if len(bits) == 2 {
+		note = bits[0] + " y " + bits[1]
+	}
+	if body.Name != nil || base != "Actualizó la empresa" {
+		return base + " y " + note, meta
+	}
+	return strings.ToUpper(note[:1]) + note[1:], meta
 }
 
 type updatePlanBody struct {
@@ -255,6 +288,16 @@ func (h *AuthController) Register(c *gin.Context) {
 		Phone:       body.Phone,
 		PlanLabel:   plan.Label + " · " + plan.Price + " / " + plan.Period,
 	})
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainAuth,
+		Action:     audit.ActionRegister,
+		ActorID:    userID,
+		CompanyID:  companyID,
+		TargetType: audit.TargetCompany,
+		TargetID:   audit.ID(companyID),
+		Summary:    "Solicitud de cuenta para " + body.CompanyName,
+		Meta:       map[string]any{"plan": plan.ID, "email": audit.MaskEmail(body.Email)},
+	})
 	c.JSON(http.StatusCreated, h.registerAccepted())
 }
 
@@ -287,7 +330,8 @@ func (h *AuthController) planByID(c *gin.Context, id string) (signup.Plan, error
 }
 
 func (h *AuthController) UpdateSignupPlan(c *gin.Context) {
-	if _, ok := h.authorize(c, "platform_admin"); !ok {
+	claims, ok := h.authorize(c, "platform_admin")
+	if !ok {
 		return
 	}
 	id := strings.TrimSpace(strings.ToLower(c.Param("id")))
@@ -337,6 +381,16 @@ func (h *AuthController) UpdateSignupPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no se pudo guardar el plan"})
 		return
 	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainTenant,
+		Action:     audit.ActionPlanUpdated,
+		ActorID:    claims.UserID,
+		ActorRole:  claims.Role,
+		TargetType: audit.TargetPlan,
+		TargetID:   id,
+		Summary:    "Actualizó el plan " + label,
+		Meta:       map[string]any{"price_clp": body.PriceCLP, "commission_percent": body.CommissionPercent},
+	})
 	saved, err := h.Repo.GetSignupPlan(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -373,7 +427,7 @@ func (h *AuthController) Login(c *gin.Context) {
 	u, err := h.Repo.GetUserByEmail(c.Request.Context(), body.Email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			h.noteLoginFailure(body.Email, c.ClientIP())
+			h.noteLoginFailure(c, body.Email)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "credenciales inválidas"})
 			return
 		}
@@ -381,7 +435,7 @@ func (h *AuthController) Login(c *gin.Context) {
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)); err != nil {
-		h.noteLoginFailure(body.Email, c.ClientIP())
+		h.noteLoginFailure(c, body.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "credenciales inválidas"})
 		return
 	}
@@ -516,14 +570,16 @@ func (h *AuthController) UpdateProfile(c *gin.Context) {
 	if hashPtr != nil && !h.revokeUser(c, claims.UserID) {
 		return
 	}
+	h.auditUser(c, claims, audit.ActionProfileUpdated, "Actualizó su perfil", claims.UserID, claims.CompanyID, nil)
 	if hashPtr != nil {
-		h.audit(c.Request.Context(), claims.UserID, claims.UserID, claims.CompanyID, "password_changed")
+		h.auditUser(c, claims, audit.ActionPasswordChanged, "Cambió su contraseña", claims.UserID, claims.CompanyID, nil)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *AuthController) CreateCompanyWithAdmin(c *gin.Context) {
-	if _, ok := h.authorize(c, "platform_admin"); !ok {
+	claims, ok := h.authorize(c, "platform_admin")
+	if !ok {
 		return
 	}
 	var body createCompanyWithAdminBody
@@ -542,6 +598,7 @@ func (h *AuthController) CreateCompanyWithAdmin(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		h.auditCompany(c, claims, audit.ActionCompanyCreated, "Creó la empresa "+body.CompanyName, companyID, nil)
 		c.JSON(http.StatusCreated, gin.H{"company_id": companyID})
 		return
 	}
@@ -588,11 +645,13 @@ func (h *AuthController) CreateCompanyWithAdmin(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.auditCompany(c, claims, audit.ActionCompanyCreated, "Creó la empresa "+body.CompanyName, companyID, nil)
 	c.JSON(http.StatusCreated, gin.H{"company_id": companyID, "admin_user_id": userID})
 }
 
 func (h *AuthController) CreateCompany(c *gin.Context) {
-	if _, ok := h.authorize(c, "platform_admin"); !ok {
+	claims, ok := h.authorize(c, "platform_admin")
+	if !ok {
 		return
 	}
 	var body createCompanyBody
@@ -610,6 +669,7 @@ func (h *AuthController) CreateCompany(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.auditCompany(c, claims, audit.ActionCompanyCreated, "Creó la empresa "+name, companyID, nil)
 	c.JSON(http.StatusCreated, gin.H{"company_id": companyID})
 }
 
@@ -673,7 +733,7 @@ func (h *AuthController) CreateCompanyUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, claims.CompanyID, "user_created")
+	h.auditUser(c, claims, audit.ActionUserCreated, "Creó un usuario de la empresa", userID, claims.CompanyID, map[string]any{"role": body.Role})
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID, "company_id": claims.CompanyID, "role": body.Role})
 }
 
@@ -748,14 +808,16 @@ func (h *AuthController) UpdateCompanyUser(c *gin.Context) {
 		return
 	}
 	if currentRole != body.Role {
-		h.audit(c.Request.Context(), claims.UserID, userID, claims.CompanyID, "role_change")
+		h.auditUser(c, claims, audit.ActionRoleChanged, "Cambió el rol de un usuario", userID, claims.CompanyID, map[string]any{"from": currentRole, "to": body.Role})
 	}
 	if currentActive != active {
-		action := "user_deactivated"
+		action := audit.ActionUserDeactivated
+		summary := "Desactivó un usuario"
 		if active {
-			action = "user_activated"
+			action = audit.ActionUserActivated
+			summary = "Activó un usuario"
 		}
-		h.audit(c.Request.Context(), claims.UserID, userID, claims.CompanyID, action)
+		h.auditUser(c, claims, action, summary, userID, claims.CompanyID, nil)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -785,7 +847,7 @@ func (h *AuthController) DeleteCompanyUser(c *gin.Context) {
 	if !h.revokeUser(c, userID) {
 		return
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, claims.CompanyID, "user_removed")
+	h.auditUser(c, claims, audit.ActionUserRemoved, "Quitó un usuario de la empresa", userID, claims.CompanyID, nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -815,6 +877,7 @@ func (h *AuthController) BootstrapPlatformAdmin(c *gin.Context) {
 		return
 	}
 	if total > 0 {
+		h.noteBootstrapRejected(c, "exists")
 		c.JSON(http.StatusForbidden, gin.H{"error": "bootstrap deshabilitado: ya existe platform_admin"})
 		return
 	}
@@ -849,6 +912,15 @@ func (h *AuthController) BootstrapPlatformAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainAuth,
+		Action:     audit.ActionBootstrapPlatformAdmin,
+		ActorID:    userID,
+		TargetType: audit.TargetUser,
+		TargetID:   audit.ID(userID),
+		Summary:    "Se creó el primer administrador de plataforma",
+		Meta:       map[string]any{"email": audit.MaskEmail(body.Email)},
+	})
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID, "email": body.Email, "role": "platform_admin"})
 }
 
@@ -927,7 +999,7 @@ func (h *AuthController) CreateCompanyAdmin(c *gin.Context) {
 	if !h.deliverTempPassword(c, body.Email, body.Name, tempPassword) {
 		return
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, body.CompanyID, "user_created")
+	h.auditUser(c, claims, audit.ActionUserCreated, "Creó el administrador de una empresa", userID, body.CompanyID, map[string]any{"role": "admin"})
 	c.JSON(http.StatusCreated, gin.H{
 		"user_id":              userID,
 		"company_id":           body.CompanyID,
@@ -988,7 +1060,14 @@ func (h *AuthController) FirstPasswordChange(c *gin.Context) {
 	if !h.revokeUser(c, u.ID) {
 		return
 	}
-	h.audit(c.Request.Context(), u.ID, u.ID, 0, "password_changed")
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainAuth,
+		Action:     audit.ActionPasswordChanged,
+		ActorID:    u.ID,
+		TargetType: audit.TargetUser,
+		TargetID:   audit.ID(u.ID),
+		Summary:    "Cambió la contraseña temporal",
+	})
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -1057,6 +1136,7 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 		}
 	}
 	if body.Name == nil && body.IsActive == nil && !hasAccess {
+		h.auditCompany(c, claims, audit.ActionCompanyUpdated, "Actualizó el plan comercial de la empresa", companyID, nil)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
@@ -1107,10 +1187,21 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 			return
 		}
 		if !*body.IsActive {
-			h.audit(c.Request.Context(), claims.UserID, 0, companyID, "user_deactivated")
+			h.audit(c, audit.Event{
+				Domain:     audit.DomainAuth,
+				Action:     audit.ActionUserDeactivated,
+				ActorID:    claims.UserID,
+				ActorRole:  claims.Role,
+				CompanyID:  companyID,
+				TargetType: audit.TargetCompany,
+				TargetID:   audit.ID(companyID),
+				Summary:    "Desactivó la empresa y sus sesiones",
+			})
 		}
 	}
 	if !issuingPassword {
+		summary, meta := companyUpdateNote(body, "Actualizó la empresa")
+		h.auditCompany(c, claims, audit.ActionCompanyUpdated, summary, companyID, meta)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
@@ -1134,7 +1225,9 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 	if !h.deliverTempPassword(c, signupAdmin.Email, "", tempPassword) {
 		return
 	}
-	h.audit(c.Request.Context(), claims.UserID, signupAdmin.UserID, companyID, "password_reset")
+	summary, meta := companyUpdateNote(body, "Activó la empresa")
+	h.auditCompany(c, claims, audit.ActionCompanyUpdated, summary, companyID, meta)
+	h.auditUser(c, claims, audit.ActionPasswordReset, "Envió una contraseña temporal al activar la empresa", signupAdmin.UserID, companyID, nil)
 	c.JSON(http.StatusOK, gin.H{
 		"ok":            true,
 		"email":         signupAdmin.Email,
@@ -1143,7 +1236,8 @@ func (h *AuthController) UpdateCompany(c *gin.Context) {
 }
 
 func (h *AuthController) DeleteCompany(c *gin.Context) {
-	if _, ok := h.authorize(c, "platform_admin"); !ok {
+	claims, ok := h.authorize(c, "platform_admin")
+	if !ok {
 		return
 	}
 	companyID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -1160,6 +1254,7 @@ func (h *AuthController) DeleteCompany(c *gin.Context) {
 		return
 	}
 	_ = h.WarmRevoked(c.Request.Context())
+	h.auditCompany(c, claims, audit.ActionCompanyDeleted, "Eliminó la empresa", companyID, nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -1235,7 +1330,7 @@ func (h *AuthController) CreatePlatformAdmin(c *gin.Context) {
 	if !h.deliverTempPassword(c, body.Email, body.Name, tempPassword) {
 		return
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, 0, "user_created")
+	h.auditUser(c, claims, audit.ActionUserCreated, "Creó un administrador de plataforma", userID, 0, map[string]any{"role": "platform_admin"})
 	c.JSON(http.StatusCreated, gin.H{
 		"user_id":              userID,
 		"role":                 "platform_admin",
@@ -1274,11 +1369,13 @@ func (h *AuthController) UpdatePlatformAdmin(c *gin.Context) {
 	if !*body.IsActive && !h.revokeUser(c, userID) {
 		return
 	}
-	action := "user_activated"
+	action := audit.ActionUserActivated
+	summary := "Activó un administrador de plataforma"
 	if !*body.IsActive {
-		action = "user_deactivated"
+		action = audit.ActionUserDeactivated
+		summary = "Desactivó un administrador de plataforma"
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, 0, action)
+	h.auditUser(c, claims, action, summary, userID, 0, nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "signed_out": userID == claims.UserID && !*body.IsActive})
 }
 
@@ -1308,7 +1405,7 @@ func (h *AuthController) DeletePlatformAdmin(c *gin.Context) {
 	if len(revoked) > 0 {
 		h.Revoked.Add(revoked, time.Now().Add(h.JWTTTL))
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, 0, "user_removed")
+	h.auditUser(c, claims, audit.ActionUserRemoved, "Quitó un administrador de plataforma", userID, 0, nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "signed_out": userID == claims.UserID})
 }
 
@@ -1366,12 +1463,14 @@ func (h *AuthController) UpdateCompanyAdmin(c *gin.Context) {
 		if !*body.IsActive && !h.revokeUser(c, userID) {
 			return
 		}
-		action := "user_activated"
+		action := audit.ActionUserActivated
+		summary := "Activó un administrador de empresa"
 		if !*body.IsActive {
-			action = "user_deactivated"
+			action = audit.ActionUserDeactivated
+			summary = "Desactivó un administrador de empresa"
 		}
 		companyID, _ := h.Repo.CompanyIDForUser(c.Request.Context(), userID)
-		h.audit(c.Request.Context(), claims.UserID, userID, companyID, action)
+		h.auditUser(c, claims, action, summary, userID, companyID, nil)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
@@ -1399,12 +1498,14 @@ func (h *AuthController) UpdateCompanyAdmin(c *gin.Context) {
 		if !*body.IsActive && !h.revokeUser(c, userID) {
 			return
 		}
-		action := "user_activated"
+		action := audit.ActionUserActivated
+		summary := "Activó un administrador de empresa"
 		if !*body.IsActive {
-			action = "user_deactivated"
+			action = audit.ActionUserDeactivated
+			summary = "Desactivó un administrador de empresa"
 		}
 		companyID, _ := h.Repo.CompanyIDForUser(c.Request.Context(), userID)
-		h.audit(c.Request.Context(), claims.UserID, userID, companyID, action)
+		h.auditUser(c, claims, action, summary, userID, companyID, nil)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -1456,7 +1557,7 @@ func (h *AuthController) ResetCompanyAdminPassword(c *gin.Context) {
 		return
 	}
 	companyID, _ := h.Repo.CompanyIDForUser(c.Request.Context(), userID)
-	h.audit(c.Request.Context(), claims.UserID, userID, companyID, "password_reset")
+	h.auditUser(c, claims, audit.ActionPasswordReset, "Envió una contraseña temporal", userID, companyID, nil)
 	c.JSON(http.StatusOK, gin.H{
 		"password_sent":        true,
 		"must_change_password": true,
@@ -1490,7 +1591,7 @@ func (h *AuthController) DeleteCompanyAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no se pudo borrar el admin"})
 		return
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, companyID, "user_removed")
+	h.auditUser(c, claims, audit.ActionUserRemoved, "Quitó un administrador de empresa", userID, companyID, nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -1533,6 +1634,16 @@ func (h *AuthController) writeSession(c *gin.Context, userID, companyID int64, e
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo abrir la sesión"})
 		return
 	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainAuth,
+		Action:     audit.ActionLoginSucceeded,
+		ActorID:    userID,
+		ActorRole:  role,
+		CompanyID:  companyID,
+		TargetType: audit.TargetUser,
+		TargetID:   audit.ID(userID),
+		Summary:    "Ingreso correcto",
+	})
 	h.setRefreshCookie(c, raw, absolute)
 	c.JSON(http.StatusOK, tokenResponse(token, h.JWTTTL))
 }
@@ -1561,6 +1672,15 @@ func (h *AuthController) Refresh(c *gin.Context) {
 		h.Revoked.Add(rotated.RevokedJTIs, time.Now().Add(h.JWTTTL))
 		if rotated.Status == repository.RefreshReuse {
 			h.alertReuse(c.Request.Context(), rotated.UserID)
+			h.audit(c, audit.Event{
+				Domain:     audit.DomainAuth,
+				Action:     audit.ActionRefreshReused,
+				Outcome:    audit.OutcomeDenied,
+				ActorID:    rotated.UserID,
+				TargetType: audit.TargetSession,
+				TargetID:   audit.ID(rotated.UserID),
+				Summary:    "Se reutilizó un refresh token ya gastado",
+			})
 		}
 		h.clearRefreshCookie(c)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "sesión inválida"})
@@ -1621,6 +1741,18 @@ func (h *AuthController) Logout(c *gin.Context) {
 	}
 	if found > 0 && !h.revokeUser(c, found) {
 		return
+	}
+	if found > 0 {
+		companyID, _ := h.Repo.CompanyIDForUser(c.Request.Context(), found)
+		h.audit(c, audit.Event{
+			Domain:     audit.DomainAuth,
+			Action:     audit.ActionLogout,
+			ActorID:    found,
+			CompanyID:  companyID,
+			TargetType: audit.TargetUser,
+			TargetID:   audit.ID(found),
+			Summary:    "Cerró sesión",
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

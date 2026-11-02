@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/flowpay/flowpay-sso/internal/audit"
 	"github.com/flowpay/flowpay-sso/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -102,6 +103,42 @@ type patchClientBody struct {
 	AssignedTo      *int64  `json:"assigned_to"`
 }
 
+func clientPatchMeta(body patchClientBody) map[string]any {
+	fields := make([]string, 0, 8)
+	if body.Name != nil {
+		fields = append(fields, "name")
+	}
+	if body.Email != nil {
+		fields = append(fields, "email")
+	}
+	if body.Phone != nil {
+		fields = append(fields, "phone")
+	}
+	if body.Address != nil {
+		fields = append(fields, "address")
+	}
+	if body.ClientCode != nil {
+		fields = append(fields, "client_code")
+	}
+	if body.BranchName != nil {
+		fields = append(fields, "branch_name")
+	}
+	if body.PaymentTerms != nil {
+		fields = append(fields, "payment_terms")
+	}
+	if body.FollowupChannel != nil {
+		fields = append(fields, "followup_channel")
+	}
+	meta := map[string]any{"fields": fields}
+	if body.IsActive != nil {
+		meta["is_active"] = *body.IsActive
+	}
+	if body.AssignedTo != nil {
+		meta["assigned_to"] = *body.AssignedTo
+	}
+	return meta
+}
+
 func (b patchClientBody) hasPatchFields() bool {
 	return b.IsActive != nil || b.FollowupChannel != nil ||
 		b.Name != nil || b.Email != nil || b.Phone != nil || b.Address != nil ||
@@ -132,7 +169,23 @@ func (h *ClientsController) CreateClient(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainClient,
+		Action:     audit.ActionClientCreated,
+		TargetType: audit.TargetClient,
+		TargetID:   audit.ID(id),
+		Summary:    "Creó un cliente",
+	})
 	c.JSON(http.StatusCreated, gin.H{"id": id})
+}
+
+func (h *ClientsController) audit(c *gin.Context, e audit.Event) {
+	e.ActorID = jwtUserIDValue(c)
+	e.ActorRole = jwtRole(c)
+	e.CompanyID = companyIDFromJWT(c)
+	if err := h.Svc.Repo.RecordAudit(c.Request.Context(), e); err != nil {
+		log.Printf("[FlowPay audit] %s.%s: %v", e.Domain, e.Action, err)
+	}
 }
 
 func (h *ClientsController) PatchClient(c *gin.Context) {
@@ -176,6 +229,14 @@ func (h *ClientsController) PatchClient(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainClient,
+		Action:     audit.ActionClientUpdated,
+		TargetType: audit.TargetClient,
+		TargetID:   audit.ID(id),
+		Summary:    "Actualizó un cliente",
+		Meta:       clientPatchMeta(body),
+	})
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -214,6 +275,13 @@ func (h *ClientsController) DeleteClient(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainClient,
+		Action:     audit.ActionClientDeleted,
+		TargetType: audit.TargetClient,
+		TargetID:   audit.ID(id),
+		Summary:    "Eliminó un cliente",
+	})
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -247,6 +315,14 @@ func (h *ClientsController) ImportDistributorRows(c *gin.Context) {
 	if _, err := h.Svc.RecordClientImportBatch(c.Request.Context(), companyIDFromJWT(c), jwtUserID(c), "excel", fn, res); err != nil {
 		log.Printf("client import batch: %v", err)
 	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainClient,
+		Action:     audit.ActionClientsImported,
+		TargetType: audit.TargetCompany,
+		TargetID:   audit.ID(companyIDFromJWT(c)),
+		Summary:    "Importó clientes",
+		Meta:       map[string]any{"created": res.Created, "updated": res.Updated, "errors": len(res.Errors)},
+	})
 	c.JSON(http.StatusOK, res)
 }
 
