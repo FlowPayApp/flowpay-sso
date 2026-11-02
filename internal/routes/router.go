@@ -11,7 +11,7 @@ import (
 
 func Register(r *gin.Engine, auth *controller.AuthController, clients *controller.ClientsController, jwtSecret string) {
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"service": "flowpay-sso", "status": "ok"})
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "flowpay-sso"})
 	})
 
 	r.GET("/auth/plans", auth.ListSignupPlans)

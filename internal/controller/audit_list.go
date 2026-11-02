@@ -19,11 +19,17 @@ type auditEventJSON struct {
 	Action      string  `json:"action"`
 	Outcome     string  `json:"outcome"`
 	ActorUserID *int64  `json:"actor_user_id,omitempty"`
+	ActorName   string  `json:"actor_name"`
+	ActorEmail  string  `json:"actor_email"`
 	ActorRole   string  `json:"actor_role,omitempty"`
 	CompanyID   *int64  `json:"company_id,omitempty"`
+	CompanyName string  `json:"company_name"`
 	TargetType  string  `json:"target_type,omitempty"`
 	TargetID    string  `json:"target_id,omitempty"`
+	TargetLabel string  `json:"target_label"`
 	IP          string  `json:"ip,omitempty"`
+	UserAgent   string  `json:"user_agent"`
+	ClientHint  string  `json:"client_hint"`
 	Summary     string  `json:"summary"`
 	Metadata    jsonRaw `json:"metadata"`
 }
@@ -45,6 +51,7 @@ func (h *AuthController) ListAudit(c *gin.Context) {
 	beforeID, _ := strconv.ParseInt(strings.TrimSpace(c.Query("before_id")), 10, 64)
 	limit, _ := strconv.Atoi(strings.TrimSpace(c.Query("limit")))
 	rows, err := h.Repo.ListAuditEvents(c.Request.Context(), repository.AuditFilter{
+		Service:   strings.TrimSpace(c.Query("service")),
 		Domain:    strings.TrimSpace(c.Query("domain")),
 		Outcome:   strings.TrimSpace(c.Query("outcome")),
 		CompanyID: companyID,
@@ -65,10 +72,16 @@ func (h *AuthController) ListAudit(c *gin.Context) {
 			DomainLabel: audit.DomainLabel(row.Domain),
 			Action:      row.Action,
 			Outcome:     row.Outcome,
+			ActorName:   strings.TrimSpace(row.ActorName),
+			ActorEmail:  strings.TrimSpace(row.ActorEmail),
 			ActorRole:   row.ActorRole,
+			CompanyName: strings.TrimSpace(row.CompanyName),
 			TargetType:  row.TargetType,
 			TargetID:    row.TargetID,
+			TargetLabel: strings.TrimSpace(row.TargetLabel),
 			IP:          row.IP,
+			UserAgent:   row.UserAgent,
+			ClientHint:  row.ClientHint,
 			Summary:     row.Summary,
 			Metadata:    jsonRaw(row.Metadata),
 		}

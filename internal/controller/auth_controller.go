@@ -427,15 +427,16 @@ func (h *AuthController) Login(c *gin.Context) {
 	u, err := h.Repo.GetUserByEmail(c.Request.Context(), body.Email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			h.noteLoginFailure(c, body.Email)
+			h.noteLoginFailure(c, body.Email, "login_unknown_email", "no hay una cuenta con ese correo", 0, "")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "credenciales inválidas"})
 			return
 		}
+		h.noteLoginRejected(c, body.Email, "login_lookup_error", "no se pudo comprobar la cuenta", audit.OutcomeFailure, 0, 0, "")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)); err != nil {
-		h.noteLoginFailure(c, body.Email)
+		h.noteLoginFailure(c, u.Email, "login_wrong_password", "la contraseña no coincide", u.ID, u.Name)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "credenciales inválidas"})
 		return
 	}
@@ -446,26 +447,32 @@ func (h *AuthController) Login(c *gin.Context) {
 		cid, role, status, err = h.Repo.CompanyLoginForUser(c.Request.Context(), u.ID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
+				h.noteLoginDenied(c, u.Email, "login_no_company", "el usuario no tiene una empresa asignada", u.ID, 0, u.Name)
 				c.JSON(http.StatusForbidden, gin.H{"error": "usuario sin empresa asignada"})
 				return
 			}
+			h.noteLoginRejected(c, u.Email, "login_company_lookup_error", "no se pudo comprobar la empresa", audit.OutcomeFailure, u.ID, 0, u.Name)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		if status == "pending" {
+			h.noteLoginDenied(c, u.Email, "login_company_pending", "la empresa todavía no está activa", u.ID, cid, u.Name)
 			c.JSON(http.StatusForbidden, gin.H{"error": "Tu empresa aún no está activa. Te escribimos cuando quede lista."})
 			return
 		}
 		if status == "inactive" {
+			h.noteLoginDenied(c, u.Email, "login_company_inactive", "la empresa está desactivada", u.ID, cid, u.Name)
 			c.JSON(http.StatusForbidden, gin.H{"error": "Tu empresa está desactivada. Cuando vuelva a estar activa podrás entrar con la misma contraseña."})
 			return
 		}
 	}
 	if !u.IsActive {
+		h.noteLoginDenied(c, u.Email, "login_account_inactive", "la cuenta está desactivada", u.ID, cid, u.Name)
 		c.JSON(http.StatusForbidden, gin.H{"error": "cuenta desactivada"})
 		return
 	}
 	if u.MustChangePassword {
+		h.noteLoginDenied(c, u.Email, "login_password_change", "tiene que cambiar la contraseña temporal", u.ID, cid, u.Name)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":                    "debes actualizar tu contraseña temporal",
 			"requires_password_change": true,
@@ -477,7 +484,7 @@ func (h *AuthController) Login(c *gin.Context) {
 		return
 	}
 
-	h.writeSession(c, u.ID, cid, u.Email, role)
+	h.writeSession(c, u.ID, cid, u.Email, u.Name, role)
 }
 
 func (h *AuthController) authorize(c *gin.Context, allowedRoles ...string) (*authjwt.AccessClaims, bool) {
@@ -1617,7 +1624,7 @@ func (h *AuthController) clearRefreshCookie(c *gin.Context) {
 	c.SetCookie(session.RefreshCookie, "", -1, session.RefreshPath, "", true, true)
 }
 
-func (h *AuthController) writeSession(c *gin.Context, userID, companyID int64, email, role string) {
+func (h *AuthController) writeSession(c *gin.Context, userID, companyID int64, email, name, role string) {
 	raw, hash, err := session.NewRefreshToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo abrir la sesión"})
@@ -1634,6 +1641,10 @@ func (h *AuthController) writeSession(c *gin.Context, userID, companyID int64, e
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo abrir la sesión"})
 		return
 	}
+	who := strings.TrimSpace(name)
+	if who == "" {
+		who = strings.TrimSpace(email)
+	}
 	h.audit(c, audit.Event{
 		Domain:     audit.DomainAuth,
 		Action:     audit.ActionLoginSucceeded,
@@ -1642,7 +1653,8 @@ func (h *AuthController) writeSession(c *gin.Context, userID, companyID int64, e
 		CompanyID:  companyID,
 		TargetType: audit.TargetUser,
 		TargetID:   audit.ID(userID),
-		Summary:    "Ingreso correcto",
+		Summary:    "Ingresó " + who,
+		Meta:       map[string]any{"email": strings.TrimSpace(email)},
 	})
 	h.setRefreshCookie(c, raw, absolute)
 	c.JSON(http.StatusOK, tokenResponse(token, h.JWTTTL))
