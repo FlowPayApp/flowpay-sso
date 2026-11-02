@@ -21,14 +21,6 @@ func (db *DB) SetUserTOTP(ctx context.Context, userID int64, secret string) erro
 	return err
 }
 
-func (db *DB) InsertAudit(ctx context.Context, actor, target, company int64, action string) error {
-	_, err := db.ex.ExecContext(ctx, `
-INSERT INTO auth_audit (actor_user_id, target_user_id, company_id, action)
-VALUES (NULLIF($1, 0), NULLIF($2, 0), NULLIF($3, 0), $4)`,
-		actor, target, company, action)
-	return err
-}
-
 type LiveJTI struct {
 	JTI     string
 	Expires time.Time

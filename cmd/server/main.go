@@ -15,6 +15,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 
+	"github.com/flowpay/flowpay-sso/internal/audit"
 	"github.com/flowpay/flowpay-sso/internal/config"
 	"github.com/flowpay/flowpay-sso/internal/controller"
 	"github.com/flowpay/flowpay-sso/internal/notify"
@@ -56,6 +57,9 @@ func main() {
 	if err := repo.EnsureAuthSessions(context.Background()); err != nil {
 		log.Printf("warn: tabla de sesiones: %v", err)
 	}
+	if err := repo.EnsureAuditEvents(context.Background()); err != nil {
+		log.Printf("warn: auditoría: %v", err)
+	}
 	auth := controller.NewAuthController(repo, []byte(cfg.JWTSecret), cfg.JWTTTL, cfg.RefreshIdle, cfg.RefreshAbsolute)
 	if err := auth.WarmRevoked(context.Background()); err != nil {
 		if config.Production() {
@@ -76,7 +80,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(gin.Logger(), gin.Recovery(), audit.StampHTTP())
 	r.Use(func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		c.Next()

@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 
+	"github.com/flowpay/flowpay-sso/internal/audit"
 	"github.com/flowpay/flowpay-sso/internal/controller"
 	"github.com/flowpay/flowpay-sso/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,7 @@ func Register(r *gin.Engine, auth *controller.AuthController, clients *controlle
 	r.POST("/auth/platform/companies-with-admin", auth.CreateCompanyWithAdmin)
 	r.PATCH("/auth/platform/companies/:id", auth.UpdateCompany)
 	r.DELETE("/auth/platform/companies/:id", auth.DeleteCompany)
+	r.GET("/auth/platform/audit", auth.ListAudit)
 	r.GET("/auth/platform/admins", auth.ListPlatformAdmins)
 	r.POST("/auth/platform/admins", auth.CreatePlatformAdmin)
 	r.PATCH("/auth/platform/admins/:user_id", auth.UpdatePlatformAdmin)
@@ -45,7 +47,7 @@ func Register(r *gin.Engine, auth *controller.AuthController, clients *controlle
 	r.DELETE("/auth/platform/company-admins/:user_id", auth.DeleteCompanyAdmin)
 
 	api := r.Group("/api")
-	api.Use(middleware.BearerJWT(jwtSecret, auth.TokenRevoked))
+	api.Use(middleware.BearerJWT(jwtSecret, auth.TokenRevoked), audit.StampActor())
 	{
 		api.GET("/clients", clients.ListClients)
 		api.POST("/clients", clients.CreateClient)

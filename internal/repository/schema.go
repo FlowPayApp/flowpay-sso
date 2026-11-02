@@ -97,14 +97,6 @@ func (db *DB) EnsureAuthSessions(ctx context.Context) error {
 			expires_at TIMESTAMPTZ NOT NULL
 		)`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT NOT NULL DEFAULT ''`,
-		`CREATE TABLE IF NOT EXISTS auth_audit (
-			id BIGSERIAL PRIMARY KEY,
-			actor_user_id BIGINT,
-			target_user_id BIGINT,
-			company_id BIGINT,
-			action TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`,
 	}
 	for _, q := range stmts {
 		if _, err := db.ex.ExecContext(ctx, q); err != nil {

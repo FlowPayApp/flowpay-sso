@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flowpay/flowpay-sso/internal/audit"
+	"github.com/flowpay/flowpay-sso/internal/authjwt"
 	"github.com/flowpay/flowpay-sso/internal/config"
 	"github.com/flowpay/flowpay-sso/internal/ratelimit"
 	"github.com/flowpay/flowpay-sso/internal/repository"
@@ -72,19 +74,20 @@ func (p *pendingLogins) get(token string) (pendingLogin, bool) {
 	return item, true
 }
 
-func (p *pendingLogins) fail(token string) {
+func (p *pendingLogins) fail(token string) (locked bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	item, ok := p.items[token]
 	if !ok {
-		return
+		return false
 	}
 	item.Tries++
 	if item.Tries >= mfaTries {
 		delete(p.items, token)
-		return
+		return true
 	}
 	p.items[token] = item
+	return false
 }
 
 func (p *pendingLogins) consume(token string) {
@@ -131,10 +134,49 @@ func (h *AuthController) revokeCompany(c *gin.Context, companyID int64) bool {
 	return true
 }
 
-func (h *AuthController) audit(ctx context.Context, actor, target, company int64, action string) {
-	if err := h.Repo.InsertAudit(ctx, actor, target, company, action); err != nil {
-		log.Printf("[FlowPay audit] %s: %v", action, err)
+func (h *AuthController) audit(c *gin.Context, e audit.Event) {
+	if err := h.Repo.RecordAudit(c.Request.Context(), e); err != nil {
+		log.Printf("[FlowPay audit] %s.%s: %v", e.Domain, e.Action, err)
 	}
+}
+
+func (h *AuthController) auditCompany(c *gin.Context, claims *authjwt.AccessClaims, action, summary string, companyID int64, meta map[string]any) {
+	actor, role := int64(0), ""
+	if claims != nil {
+		actor, role = claims.UserID, claims.Role
+	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainTenant,
+		Action:     action,
+		ActorID:    actor,
+		ActorRole:  role,
+		CompanyID:  companyID,
+		TargetType: audit.TargetCompany,
+		TargetID:   audit.ID(companyID),
+		Summary:    summary,
+		Meta:       meta,
+	})
+}
+
+func (h *AuthController) auditUser(c *gin.Context, claims *authjwt.AccessClaims, action, summary string, target, company int64, meta map[string]any) {
+	actor, role := int64(0), ""
+	if claims != nil {
+		actor, role = claims.UserID, claims.Role
+		if company == 0 {
+			company = claims.CompanyID
+		}
+	}
+	h.audit(c, audit.Event{
+		Domain:     audit.DomainAuth,
+		Action:     action,
+		ActorID:    actor,
+		ActorRole:  role,
+		CompanyID:  company,
+		TargetType: audit.TargetUser,
+		TargetID:   audit.ID(target),
+		Summary:    summary,
+		Meta:       meta,
+	})
 }
 
 func (h *AuthController) dataKey() []byte {
@@ -162,11 +204,24 @@ func (h *AuthController) loginLimited(c *gin.Context, email string) bool {
 	return false
 }
 
-func (h *AuthController) noteLoginFailure(email, ip string) {
-	_, tripped := h.attempts.Hit("login:email:"+email, loginAlertAt, attemptWindow, time.Now())
-	h.attempts.Hit("login:ip:"+ip, loginIPMax, attemptWindow, time.Now())
+func (h *AuthController) noteLoginFailure(c *gin.Context, email string) {
+	ip := c.ClientIP()
+	now := time.Now()
+	_, tripped := h.attempts.Hit("login:email:"+email, loginAlertAt, attemptWindow, now)
+	h.attempts.Hit("login:ip:"+ip, loginIPMax, attemptWindow, now)
+	h.audit(c, audit.Event{
+		Domain:  audit.DomainAuth,
+		Action:  audit.ActionLoginFailed,
+		Outcome: audit.OutcomeFailure,
+		Summary: "Intento de ingreso rechazado",
+		Meta:    map[string]any{"email": audit.MaskEmail(email)},
+	})
 	if tripped {
 		h.alertAdmins("Muchos intentos de ingreso", "El correo "+email+" falló varias veces al entrar. No se incluye la contraseña.")
+	}
+	if h.attempts.Blocked("login:email:"+email, loginEmailMax, attemptWindow, now) ||
+		h.attempts.Blocked("login:ip:"+ip, loginIPMax, attemptWindow, now) {
+		h.noteAccessBlocked(c, "login", email)
 	}
 }
 
@@ -178,9 +233,40 @@ func (h *AuthController) publicLimited(c *gin.Context, kind, email string) bool 
 		h.tooMany(c)
 		return true
 	}
-	h.attempts.Hit(kind+":ip:"+ip, publicIPMax, attemptWindow, now)
-	h.attempts.Hit(kind+":email:"+email, publicEmailMax, attemptWindow, now)
+	_, ipTripped := h.attempts.Hit(kind+":ip:"+ip, publicIPMax, attemptWindow, now)
+	_, emailTripped := h.attempts.Hit(kind+":email:"+email, publicEmailMax, attemptWindow, now)
+	if ipTripped || emailTripped {
+		h.noteAccessBlocked(c, kind, email)
+	}
 	return false
+}
+
+func (h *AuthController) noteAccessBlocked(c *gin.Context, kind, email string) {
+	if !audit.Once("access-blocked:"+kind+":"+c.ClientIP(), attemptWindow) {
+		return
+	}
+	summary := "Bloqueó intentos por exceso"
+	switch kind {
+	case "login":
+		summary = "Bloqueó el ingreso por demasiados intentos"
+	case "register":
+		summary = "Bloqueó el registro por demasiados intentos"
+	case "mfa":
+		summary = "Bloqueó el segundo factor por demasiados intentos"
+	case "first-change":
+		summary = "Bloqueó el cambio de clave por demasiados intentos"
+	}
+	meta := map[string]any{"kind": kind}
+	if strings.TrimSpace(email) != "" {
+		meta["email"] = audit.MaskEmail(email)
+	}
+	h.audit(c, audit.Event{
+		Domain:  audit.DomainAuth,
+		Action:  audit.ActionAccessBlocked,
+		Outcome: audit.OutcomeDenied,
+		Summary: summary,
+		Meta:    meta,
+	})
 }
 
 func (h *AuthController) alertAdmins(subject, body string) {
@@ -214,14 +300,29 @@ func (h *AuthController) bootstrapOpen(c *gin.Context) bool {
 	secret := os.Getenv("FLOWPAY_BOOTSTRAP_SECRET")
 	production := strings.EqualFold(strings.TrimSpace(os.Getenv("FLOWPAY_ENV")), "production")
 	if production && strings.TrimSpace(secret) == "" {
+		h.noteBootstrapRejected(c, "closed")
 		c.JSON(http.StatusNotFound, gin.H{"error": "no encontrado"})
 		return false
 	}
 	if strings.TrimSpace(secret) != "" && subtle.ConstantTimeCompare([]byte(c.GetHeader("X-Bootstrap-Secret")), []byte(secret)) != 1 {
+		h.noteBootstrapRejected(c, "secret")
 		c.JSON(http.StatusNotFound, gin.H{"error": "no encontrado"})
 		return false
 	}
 	return true
+}
+
+func (h *AuthController) noteBootstrapRejected(c *gin.Context, reason string) {
+	if !audit.Once("bootstrap-rejected:"+c.ClientIP(), attemptWindow) {
+		return
+	}
+	h.audit(c, audit.Event{
+		Domain:  audit.DomainAuth,
+		Action:  audit.ActionBootstrapRejected,
+		Outcome: audit.OutcomeDenied,
+		Summary: "Intento de crear el primer superadmin con el alta cerrada",
+		Meta:    map[string]any{"reason": reason},
+	})
 }
 
 func (h *AuthController) registerAccepted() gin.H {
@@ -287,7 +388,10 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 	}
 	item, ok := h.pending.get(body.Token)
 	if !ok {
-		h.attempts.Hit("mfa:ip:"+c.ClientIP(), publicIPMax, attemptWindow, now)
+		_, tripped := h.attempts.Hit("mfa:ip:"+c.ClientIP(), publicIPMax, attemptWindow, now)
+		if tripped {
+			h.noteAccessBlocked(c, "mfa", "")
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "código inválido"})
 		return
 	}
@@ -306,8 +410,21 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 		}
 	}
 	if !totp.Verify(secret, body.Code, now) {
-		h.pending.fail(body.Token)
-		h.attempts.Hit("mfa:ip:"+c.ClientIP(), publicIPMax, attemptWindow, now)
+		locked := h.pending.fail(body.Token)
+		_, tripped := h.attempts.Hit("mfa:ip:"+c.ClientIP(), publicIPMax, attemptWindow, now)
+		h.audit(c, audit.Event{
+			Domain:     audit.DomainAuth,
+			Action:     audit.ActionMFAFailed,
+			Outcome:    audit.OutcomeFailure,
+			ActorID:    item.UserID,
+			CompanyID:  item.CompanyID,
+			TargetType: audit.TargetUser,
+			TargetID:   audit.ID(item.UserID),
+			Summary:    "Código de segundo factor rechazado",
+		})
+		if locked || tripped {
+			h.noteAccessBlocked(c, "mfa", item.Email)
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "código inválido"})
 		return
 	}
@@ -321,7 +438,7 @@ func (h *AuthController) LoginMFA(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		h.audit(c.Request.Context(), item.UserID, item.UserID, item.CompanyID, "mfa_enrolled")
+		h.auditUser(c, &authjwt.AccessClaims{UserID: item.UserID, CompanyID: item.CompanyID, Role: item.Role}, audit.ActionMFAEnrolled, "Enroló el segundo factor", item.UserID, item.CompanyID, nil)
 	}
 	h.pending.consume(body.Token)
 	h.writeSession(c, item.UserID, item.CompanyID, item.Email, item.Role)
@@ -353,7 +470,7 @@ func (h *AuthController) ResetPlatformMFA(c *gin.Context) {
 	if !h.revokeUser(c, userID) {
 		return
 	}
-	h.audit(c.Request.Context(), claims.UserID, userID, 0, "mfa_reset")
+	h.auditUser(c, claims, audit.ActionMFAReset, "Reseteó el segundo factor", userID, 0, nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
